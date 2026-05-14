@@ -1,0 +1,415 @@
+import React, { useEffect, useState, useLayoutEffect } from 'react';
+import {
+  StyleSheet,
+  View,
+  Image,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  SafeAreaView,
+  TextInput,
+} from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { getInvoiceById, deleteInvoice, updateInvoice, getUserCategories, saveUserCategory } from '../services/database';
+import { cancelWarrantyReminder, scheduleWarrantyReminder } from '../services/notifications';
+import { Invoice } from '../types/invoice';
+import { RootStackParamList } from '../types/navigation';
+import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
+
+const WARRANTY_OPTIONS = [
+  { label: 'None', months: 0 },
+  { label: '1 Year', months: 12 },
+  { label: '2 Years', months: 24 },
+  { label: '3 Years', months: 36 },
+];
+
+type Props = NativeStackScreenProps<RootStackParamList, 'InvoiceDetail'>;
+
+export default function InvoiceDetailScreen({ route, navigation }: Props) {
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editVendor, setEditVendor] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editWarrantyMonths, setEditWarrantyMonths] = useState(0);
+  const [categoryPresets, setCategoryPresets] = useState<string[]>(DEFAULT_CATEGORIES);
+
+  useEffect(() => {
+    const { invoiceId } = route.params;
+    const inv = getInvoiceById(invoiceId);
+    setInvoice(inv);
+  }, [route.params]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={isEditing ? handleCancel : handleStartEdit} style={styles.headerBtn}>
+          <Text style={styles.headerBtnText}>{isEditing ? 'Cancel' : 'Edit'}</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [isEditing, invoice]);
+
+  const handleStartEdit = () => {
+    if (!invoice) return;
+    // Load user-saved categories merged with defaults
+    const userCats = getUserCategories();
+    const merged = [
+      ...DEFAULT_CATEGORIES,
+      ...userCats.filter((c) => !DEFAULT_CATEGORIES.includes(c)),
+    ];
+    setCategoryPresets(merged);
+    setEditVendor(invoice.vendor ?? '');
+    setEditDate(invoice.date ?? '');
+    setEditCategory(normalizeCategory(invoice.category ?? ''));
+    setEditWarrantyMonths(invoice.warrantyMonths ?? 0);
+    setIsEditing(true);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+  };
+
+  const handleSave = () => {
+    if (!invoice) return;
+    const normalized = normalizeCategory(editCategory);
+    // Persist custom category for future reuse
+    if (normalized) {
+      saveUserCategory(normalized);
+      // Refresh presets so the new one shows immediately next time
+      const userCats = getUserCategories();
+      const merged = [
+        ...DEFAULT_CATEGORIES,
+        ...userCats.filter((c) => !DEFAULT_CATEGORIES.includes(c)),
+      ];
+      setCategoryPresets(merged);
+    }
+    updateInvoice(invoice.id, {
+      vendor: editVendor.trim(),
+      date: editDate.trim(),
+      category: normalized,
+      warrantyMonths: editWarrantyMonths,
+    });
+
+    // Reschedule warranty notification if warranty changed
+    if (invoice.warrantyNotifId) {
+      cancelWarrantyReminder(invoice.warrantyNotifId).catch(() => {});
+    }
+    if (editWarrantyMonths > 0) {
+      scheduleWarrantyReminder(
+        invoice.id,
+        editVendor.trim() || invoice.vendor,
+        editDate.trim() || invoice.date,
+        editWarrantyMonths
+      ).then((notifId) => {
+        if (notifId) updateInvoice(invoice.id, { warrantyNotifId: notifId });
+      }).catch(() => {});
+    } else {
+      updateInvoice(invoice.id, { warrantyNotifId: '' });
+    }
+
+    const updated = getInvoiceById(invoice.id);
+    setInvoice(updated);
+    setIsEditing(false);
+  };
+
+  const handleDelete = () => {
+    Alert.alert('Delete Invoice', 'Are you sure?', [
+      { text: 'Cancel' },
+      {
+        text: 'Delete',
+        onPress: () => {
+          if (invoice) {
+            if (invoice.warrantyNotifId) {
+              cancelWarrantyReminder(invoice.warrantyNotifId).catch(() => {});
+            }
+            deleteInvoice(invoice.id);
+            navigation.goBack();
+          }
+        },
+        style: 'destructive',
+      },
+    ]);
+  };
+
+  if (!invoice) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text>Loading...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        <Image source={{ uri: invoice.photoUri }} style={styles.image} />
+
+        <View style={styles.content}>
+          {/* Merchant */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Merchant</Text>
+            {isEditing ? (
+              <TextInput
+                style={styles.input}
+                value={editVendor}
+                onChangeText={setEditVendor}
+                placeholder="Merchant name"
+              />
+            ) : (
+              <Text style={styles.value}>{invoice.vendor}</Text>
+            )}
+          </View>
+
+          {/* Date */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Date</Text>
+            {isEditing ? (
+              <TextInput
+                style={styles.input}
+                value={editDate}
+                onChangeText={setEditDate}
+                placeholder="YYYY-MM-DD"
+              />
+            ) : (
+              <Text style={styles.value}>{invoice.date}</Text>
+            )}
+          </View>
+
+          {/* Category */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Category</Text>
+            {isEditing ? (
+              <View>
+                <TextInput
+                  style={styles.input}
+                  value={editCategory}
+                  onChangeText={setEditCategory}
+                  placeholder="Type any category, e.g. toy..."
+                  autoCapitalize="none"
+                />
+                <View style={styles.presets}>
+                  {categoryPresets.map((cat) => (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[styles.preset, editCategory === cat && styles.presetActive]}
+                      onPress={() => setEditCategory(cat)}
+                    >
+                      <Text style={[styles.presetText, editCategory === cat && styles.presetTextActive]}>
+                        {capitalize(cat)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={styles.hintText}>
+                  Custom categories are saved automatically for future use.
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.value}>{capitalize(invoice.category) || 'Other'}</Text>
+            )}
+          </View>
+
+          {/* Warranty (edit mode shows selector, view mode handled below) */}
+          {isEditing && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Warranty</Text>
+              <View style={styles.presets}>
+                {WARRANTY_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.months}
+                    style={[styles.preset, editWarrantyMonths === opt.months && styles.presetActive]}
+                    onPress={() => setEditWarrantyMonths(opt.months)}
+                  >
+                    <Text style={[styles.presetText, editWarrantyMonths === opt.months && styles.presetTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Subtotal */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Subtotal</Text>
+            <Text style={styles.value}>${invoice.subtotal.toFixed(2)}</Text>
+          </View>
+
+          {/* Tax */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Tax</Text>
+            <Text style={styles.value}>${invoice.tax.toFixed(2)}</Text>
+          </View>
+
+          {/* Total */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Total</Text>
+            <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
+          </View>
+
+          {/* Warranty */}
+          {(invoice.warrantyMonths ?? 0) > 0 && (() => {
+            const expiry = new Date(invoice.date);
+            expiry.setMonth(expiry.getMonth() + (invoice.warrantyMonths ?? 0));
+            const now = new Date();
+            const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / 86400000);
+            const expired = daysLeft < 0;
+            const expiring = !expired && daysLeft <= 30;
+            return (
+              <View style={[styles.field, expired && styles.fieldExpired, expiring && styles.fieldExpiring]}>
+                <Text style={styles.label}>Warranty</Text>
+                <Text style={[styles.value, expired && styles.valueExpired, expiring && styles.valueExpiring]}>
+                  {expired
+                    ? `Expired on ${expiry.toDateString()}`
+                    : expiring
+                    ? `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} (${expiry.toDateString()})`
+                    : `Valid until ${expiry.toDateString()}`}
+                </Text>
+              </View>
+            );
+          })()}
+
+          {/* Items */}
+          {invoice.items && invoice.items.length > 0 && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Items</Text>
+              {invoice.items.map((item, idx) => (
+                <Text key={idx} style={styles.itemText}>
+                  {item.name} x{item.quantity} = ${item.totalPrice?.toFixed(2)}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      <View style={styles.controls}>
+        {isEditing ? (
+          <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSave}>
+            <Text style={styles.buttonText}>Save Changes</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDelete}>
+            <Text style={styles.buttonText}>Delete</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  headerBtn: {
+    paddingHorizontal: 4,
+  },
+  headerBtnText: {
+    color: '#2563EB',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  image: {
+    width: '100%',
+    height: 250,
+  },
+  content: {
+    padding: 16,
+  },
+  field: {
+    backgroundColor: '#fff',
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 8,
+  },
+  label: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '600',
+  },
+  value: {
+    fontSize: 16,
+    color: '#000',
+    marginTop: 4,
+  },
+  totalValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+  },
+  fieldExpired: { borderLeftWidth: 3, borderLeftColor: '#ef4444' },
+  fieldExpiring: { borderLeftWidth: 3, borderLeftColor: '#f59e0b' },
+  valueExpired: { color: '#ef4444' },
+  valueExpiring: { color: '#d97706' },
+  itemText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+    marginLeft: 8,
+  },
+  input: {
+    marginTop: 6,
+    fontSize: 16,
+    color: '#000',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2563EB',
+    paddingBottom: 4,
+  },
+  presets: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 10,
+    gap: 8,
+  },
+  preset: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#f9fafb',
+  },
+  presetActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  presetText: {
+    fontSize: 13,
+    color: '#374151',
+  },
+  presetTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  hintText: {
+    marginTop: 8,
+    fontSize: 11,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  controls: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  button: {
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  saveButton: {
+    backgroundColor: '#2563EB',
+  },
+  deleteButton: {
+    backgroundColor: '#f44336',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+});

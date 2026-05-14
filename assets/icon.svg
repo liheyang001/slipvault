@@ -1,0 +1,93 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Blue gradient background -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <!-- Receipt shadow -->
+    <filter id="shadow" x="-10%" y="-5%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="24" flood-color="#0f172a" flood-opacity="0.28"/>
+    </filter>
+    <!-- Checkmark shadow -->
+    <filter id="badgeShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#064e3b" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="1024" height="1024" rx="230" fill="url(#bgGrad)"/>
+
+  <!-- Subtle background texture dots -->
+  <circle cx="120" cy="140" r="6" fill="white" opacity="0.06"/>
+  <circle cx="900" cy="880" r="8" fill="white" opacity="0.06"/>
+  <circle cx="880" cy="160" r="5" fill="white" opacity="0.05"/>
+  <circle cx="140" cy="870" r="7" fill="white" opacity="0.05"/>
+  <circle cx="512" cy="80" r="4" fill="white" opacity="0.06"/>
+
+  <!-- Receipt paper -->
+  <rect x="268" y="188" width="448" height="586" rx="28" fill="white" filter="url(#shadow)"/>
+
+  <!-- Receipt top color band (blue header) -->
+  <rect x="268" y="188" width="448" height="72" rx="28" fill="#2563eb"/>
+  <rect x="268" y="232" width="448" height="28" fill="#2563eb"/>
+
+  <!-- Header text lines on blue band -->
+  <rect x="308" y="208" width="180" height="14" rx="7" fill="white" opacity="0.9"/>
+  <rect x="308" y="230" width="120" height="10" rx="5" fill="white" opacity="0.5"/>
+
+  <!-- Amount badge top-right of header -->
+  <rect x="618" y="206" width="80" height="32" rx="10" fill="white" opacity="0.18"/>
+  <rect x="626" y="214" width="64" height="10" rx="5" fill="white" opacity="0.85"/>
+  <rect x="634" y="229" width="46" height="8" rx="4" fill="white" opacity="0.5"/>
+
+  <!-- Divider after header -->
+  <rect x="268" y="260" width="448" height="1.5" fill="#e5e7eb"/>
+
+  <!-- Section: Date & ref row -->
+  <rect x="308" y="282" width="96" height="11" rx="5.5" fill="#93c5fd"/>
+  <rect x="308" y="300" width="140" height="9" rx="4.5" fill="#bfdbfe"/>
+
+  <!-- Divider -->
+  <rect x="308" y="326" width="368" height="1" fill="#f1f5f9"/>
+
+  <!-- Items list -->
+  <rect x="308" y="344" width="220" height="11" rx="5.5" fill="#cbd5e1"/>
+  <rect x="578" y="344" width="98" height="11" rx="5.5" fill="#94a3b8"/>
+
+  <rect x="308" y="372" width="196" height="11" rx="5.5" fill="#cbd5e1"/>
+  <rect x="578" y="372" width="98" height="11" rx="5.5" fill="#94a3b8"/>
+
+  <rect x="308" y="400" width="244" height="11" rx="5.5" fill="#cbd5e1"/>
+  <rect x="578" y="400" width="98" height="11" rx="5.5" fill="#94a3b8"/>
+
+  <rect x="308" y="428" width="168" height="11" rx="5.5" fill="#cbd5e1"/>
+  <rect x="578" y="428" width="98" height="11" rx="5.5" fill="#94a3b8"/>
+
+  <rect x="308" y="456" width="210" height="11" rx="5.5" fill="#e2e8f0"/>
+  <rect x="578" y="456" width="98" height="11" rx="5.5" fill="#e2e8f0"/>
+
+  <!-- Divider before total -->
+  <rect x="308" y="484" width="368" height="1.5" fill="#e5e7eb"/>
+
+  <!-- Subtotal row -->
+  <rect x="308" y="500" width="80" height="10" rx="5" fill="#94a3b8"/>
+  <rect x="560" y="500" width="116" height="10" rx="5" fill="#94a3b8"/>
+
+  <!-- Tax row -->
+  <rect x="308" y="520" width="60" height="10" rx="5" fill="#94a3b8"/>
+  <rect x="560" y="520" width="116" height="10" rx="5" fill="#94a3b8"/>
+
+  <!-- Total row (bold, blue) -->
+  <rect x="308" y="548" width="104" height="16" rx="8" fill="#2563eb" opacity="0.85"/>
+  <rect x="516" y="544" width="160" height="24" rx="12" fill="#2563eb"/>
+
+  <!-- Receipt bottom: torn edge simulation (scallop) -->
+  <path d="M268 736 Q282 752 296 736 Q310 720 324 736 Q338 752 352 736 Q366 720 380 736 Q394 752 408 736 Q422 720 436 736 Q450 752 464 736 Q478 720 492 736 Q506 752 520 736 Q534 720 548 736 Q562 752 576 736 Q590 720 604 736 Q618 752 632 736 Q646 720 660 736 Q674 752 688 736 Q702 720 716 736 L716 774 L268 774 Z" fill="white"/>
+
+  <!-- Green checkmark badge -->
+  <circle cx="694" cy="686" r="78" fill="#10b981" filter="url(#badgeShadow)"/>
+  <circle cx="694" cy="686" r="70" fill="#059669"/>
+  <!-- Checkmark path -->
+  <path d="M660 686 L682 708 L730 658" stroke="white" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

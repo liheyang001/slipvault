@@ -1,0 +1,137 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Switch,
+  Linking,
+  Alert,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { getSetting, setSetting, getAllInvoices } from '../services/database';
+import { scheduleMonthlyReminder, cancelScheduledNotification } from '../services/notifications';
+
+const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
+
+export default function SettingsScreen() {
+  const [monthlyEnabled, setMonthlyEnabled] = useState(false);
+
+  useEffect(() => {
+    setMonthlyEnabled(getSetting('monthlyNotif', 'false') === 'true');
+  }, []);
+
+  async function handleMonthlyToggle(value: boolean) {
+    setMonthlyEnabled(value);
+    setSetting('monthlyNotif', value ? 'true' : 'false');
+
+    const existingId = getSetting('monthlyNotifId', '');
+    if (existingId) {
+      await cancelScheduledNotification(existingId).catch(() => {});
+      setSetting('monthlyNotifId', '');
+    }
+
+    if (value) {
+      const invoices = getAllInvoices();
+      const now = new Date();
+      const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const monthInvoices = invoices.filter((inv) => inv.date?.startsWith(thisMonth));
+      const total = monthInvoices.reduce((s, inv) => s + inv.total, 0);
+
+      const id = await scheduleMonthlyReminder(monthInvoices.length, total).catch(() => null);
+      if (id) setSetting('monthlyNotifId', id);
+
+      Alert.alert('Monthly Summary On', "You'll receive a summary on the 1st of each month.");
+    }
+  }
+
+  async function handleFeedback() {
+    const url = `mailto:${FEEDBACK_EMAIL}?subject=Invoice%20Reader%20Feedback`;
+    const canOpen = await Linking.canOpenURL(url);
+    if (canOpen) {
+      Linking.openURL(url);
+    } else {
+      Alert.alert(
+        'Send Feedback',
+        `Please email us at:\n\n${FEEDBACK_EMAIL}`,
+        [{ text: 'OK' }]
+      );
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Notifications</Text>
+
+        <View style={styles.row}>
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>Monthly Summary</Text>
+            <Text style={styles.rowSub}>
+              Get a recap of your spending on the 1st of each month
+            </Text>
+          </View>
+          <Switch
+            value={monthlyEnabled}
+            onValueChange={handleMonthlyToggle}
+            trackColor={{ true: '#2563eb' }}
+          />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Support</Text>
+
+        <TouchableOpacity style={styles.row} onPress={handleFeedback}>
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>Send Feedback</Text>
+            <Text style={styles.rowSub}>{FEEDBACK_EMAIL}</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.version}>Slipvault v1.0.0</Text>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+
+  section: {
+    backgroundColor: '#fff',
+    marginTop: 24,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#f1f5f9',
+    paddingHorizontal: 16,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    paddingVertical: 10,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    gap: 12,
+  },
+  rowContent: { flex: 1, gap: 2 },
+  rowTitle: { fontSize: 15, fontWeight: '600', color: '#0f172a' },
+  rowSub: { fontSize: 12, color: '#94a3b8', lineHeight: 18 },
+  chevron: { fontSize: 22, color: '#cbd5e1', fontWeight: '300' },
+
+  version: {
+    textAlign: 'center',
+    marginTop: 40,
+    fontSize: 12,
+    color: '#cbd5e1',
+  },
+});
