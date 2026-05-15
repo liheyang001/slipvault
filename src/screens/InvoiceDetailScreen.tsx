@@ -11,6 +11,8 @@ import {
   Modal,
   Dimensions,
   StatusBar,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -42,6 +44,49 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const [editWarrantyMonths, setEditWarrantyMonths] = useState(0);
   const [categoryPresets, setCategoryPresets] = useState<string[]>(DEFAULT_CATEGORIES);
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
+
+  const scale = React.useRef(new Animated.Value(1)).current;
+  const committedScale = React.useRef(1);
+  const gestureStartDist = React.useRef<number | null>(null);
+  const liveScale = React.useRef(1);
+
+  const getDistance = (touches: React.Touch[]) => {
+    const dx = touches[0].pageX - touches[1].pageX;
+    const dy = touches[0].pageY - touches[1].pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const pinchResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        if (evt.nativeEvent.touches.length === 2) {
+          gestureStartDist.current = getDistance([...evt.nativeEvent.touches] as any);
+        }
+      },
+      onPanResponderMove: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length === 2 && gestureStartDist.current !== null) {
+          const dist = getDistance([...touches] as any);
+          const next = Math.min(Math.max(committedScale.current * (dist / gestureStartDist.current), 1), 4);
+          liveScale.current = next;
+          scale.setValue(next);
+        }
+      },
+      onPanResponderRelease: () => {
+        committedScale.current = liveScale.current;
+        gestureStartDist.current = null;
+      },
+    })
+  ).current;
+
+  const handleCloseModal = () => {
+    scale.setValue(1);
+    committedScale.current = 1;
+    liveScale.current = 1;
+    setPhotoModalVisible(false);
+  };
 
   useEffect(() => {
     const { invoiceId } = route.params;
@@ -323,30 +368,22 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
         transparent
         animationType="fade"
         statusBarTranslucent
-        onRequestClose={() => setPhotoModalVisible(false)}
+        onRequestClose={handleCloseModal}
       >
         <View style={styles.modalBg}>
-          <ScrollView
-            style={styles.modalScroll}
-            contentContainerStyle={styles.modalContent}
-            maximumZoomScale={4}
-            minimumZoomScale={1}
-            centerContent
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-          >
-            <Image
+          <View style={styles.modalImageContainer} {...pinchResponder.panHandlers}>
+            <Animated.Image
               source={{ uri: invoice.photoUri }}
-              style={styles.modalImage}
+              style={[styles.modalImage, { transform: [{ scale }] }]}
               resizeMode="contain"
             />
-          </ScrollView>
+          </View>
 
           <View style={styles.modalActions}>
             <TouchableOpacity style={styles.modalBtn} onPress={handleSavePhoto}>
               <Text style={styles.modalBtnText}>Save to Photos</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnClose]} onPress={() => setPhotoModalVisible(false)}>
+            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnClose]} onPress={handleCloseModal}>
               <Text style={styles.modalBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -416,12 +453,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.95)',
   },
-  modalScroll: { flex: 1 },
-  modalContent: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT * 0.82,
+  modalImageContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   modalImage: {
     width: SCREEN_WIDTH,

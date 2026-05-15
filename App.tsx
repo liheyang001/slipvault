@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initDatabase, getSetting, setSetting, getAllInvoices } from './src/services/database';
 import { initNotifications, cancelScheduledNotification, scheduleMonthlyReminder } from './src/services/notifications';
 import { RootStackParamList } from './src/types/navigation';
@@ -43,6 +44,7 @@ export default function App() {
   }
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <NavigationContainer>
       <StatusBar style="auto" />
       <Stack.Navigator
@@ -85,5 +87,6 @@ export default function App() {
         />
       </Stack.Navigator>
     </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
