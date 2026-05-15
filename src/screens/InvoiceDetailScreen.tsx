@@ -9,13 +9,19 @@ import {
   Alert,
   SafeAreaView,
   TextInput,
+  Modal,
+  Dimensions,
+  StatusBar,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as MediaLibrary from 'expo-media-library';
 import { getInvoiceById, deleteInvoice, updateInvoice, getUserCategories, saveUserCategory } from '../services/database';
 import { cancelWarrantyReminder, scheduleWarrantyReminder } from '../services/notifications';
 import { Invoice } from '../types/invoice';
 import { RootStackParamList } from '../types/navigation';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const WARRANTY_OPTIONS = [
   { label: 'None', months: 0 },
@@ -34,6 +40,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const [editCategory, setEditCategory] = useState('');
   const [editWarrantyMonths, setEditWarrantyMonths] = useState(0);
   const [categoryPresets, setCategoryPresets] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
 
   useEffect(() => {
     const { invoiceId } = route.params;
@@ -53,7 +60,6 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
 
   const handleStartEdit = () => {
     if (!invoice) return;
-    // Load user-saved categories merged with defaults
     const userCats = getUserCategories();
     const merged = [
       ...DEFAULT_CATEGORIES,
@@ -67,17 +73,13 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     setIsEditing(true);
   };
 
-  const handleCancel = () => {
-    setIsEditing(false);
-  };
+  const handleCancel = () => setIsEditing(false);
 
   const handleSave = () => {
     if (!invoice) return;
     const normalized = normalizeCategory(editCategory);
-    // Persist custom category for future reuse
     if (normalized) {
       saveUserCategory(normalized);
-      // Refresh presets so the new one shows immediately next time
       const userCats = getUserCategories();
       const merged = [
         ...DEFAULT_CATEGORIES,
@@ -92,7 +94,6 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       warrantyMonths: editWarrantyMonths,
     });
 
-    // Reschedule warranty notification if warranty changed
     if (invoice.warrantyNotifId) {
       cancelWarrantyReminder(invoice.warrantyNotifId).catch(() => {});
     }
@@ -133,6 +134,21 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     ]);
   };
 
+  const handleSavePhoto = async () => {
+    if (!invoice) return;
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo library access to save the image.');
+      return;
+    }
+    try {
+      await MediaLibrary.saveToLibraryAsync(invoice.photoUri);
+      Alert.alert('Saved', 'Photo saved to your gallery.');
+    } catch {
+      Alert.alert('Error', 'Failed to save photo.');
+    }
+  };
+
   if (!invoice) {
     return (
       <SafeAreaView style={styles.container}>
@@ -144,19 +160,20 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView>
-        <Image source={{ uri: invoice.photoUri }} style={styles.image} />
+        {/* Tappable photo */}
+        <TouchableOpacity onPress={() => setPhotoModalVisible(true)} activeOpacity={0.9}>
+          <Image source={{ uri: invoice.photoUri }} style={styles.image} />
+          <View style={styles.photoHint}>
+            <Text style={styles.photoHintText}>Tap to enlarge</Text>
+          </View>
+        </TouchableOpacity>
 
         <View style={styles.content}>
           {/* Merchant */}
           <View style={styles.field}>
             <Text style={styles.label}>Merchant</Text>
             {isEditing ? (
-              <TextInput
-                style={styles.input}
-                value={editVendor}
-                onChangeText={setEditVendor}
-                placeholder="Merchant name"
-              />
+              <TextInput style={styles.input} value={editVendor} onChangeText={setEditVendor} placeholder="Merchant name" />
             ) : (
               <Text style={styles.value}>{invoice.vendor}</Text>
             )}
@@ -170,7 +187,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                 style={styles.input}
                 value={editDate}
                 onChangeText={setEditDate}
-                placeholder="YYYY-MM-DD"
+                placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM"
               />
             ) : (
               <Text style={styles.value}>{invoice.date}</Text>
@@ -202,16 +219,14 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                     </TouchableOpacity>
                   ))}
                 </View>
-                <Text style={styles.hintText}>
-                  Custom categories are saved automatically for future use.
-                </Text>
+                <Text style={styles.hintText}>Custom categories are saved automatically for future use.</Text>
               </View>
             ) : (
               <Text style={styles.value}>{capitalize(invoice.category) || 'Other'}</Text>
             )}
           </View>
 
-          {/* Warranty (edit mode shows selector, view mode handled below) */}
+          {/* Warranty selector (edit mode) */}
           {isEditing && (
             <View style={styles.field}>
               <Text style={styles.label}>Warranty</Text>
@@ -249,7 +264,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
             <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
           </View>
 
-          {/* Warranty */}
+          {/* Warranty display */}
           {(invoice.warrantyMonths ?? 0) > 0 && (() => {
             const expiry = new Date(invoice.date);
             expiry.setMonth(expiry.getMonth() + (invoice.warrantyMonths ?? 0));
@@ -296,61 +311,73 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Photo zoom modal */}
+      <Modal
+        visible={photoModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setPhotoModalVisible(false)}
+      >
+        <View style={styles.modalBg}>
+          <ScrollView
+            style={styles.modalScroll}
+            contentContainerStyle={styles.modalContent}
+            maximumZoomScale={4}
+            minimumZoomScale={1}
+            centerContent
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+          >
+            <Image
+              source={{ uri: invoice.photoUri }}
+              style={styles.modalImage}
+              resizeMode="contain"
+            />
+          </ScrollView>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity style={styles.modalBtn} onPress={handleSavePhoto}>
+              <Text style={styles.modalBtnText}>Save to Photos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modalBtn, styles.modalBtnClose]} onPress={() => setPhotoModalVisible(false)}>
+              <Text style={styles.modalBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  headerBtn: { paddingHorizontal: 4 },
+  headerBtnText: { color: '#2563EB', fontSize: 16, fontWeight: '600' },
+
+  image: { width: '100%', height: 250 },
+  photoHint: {
+    position: 'absolute',
+    bottom: 8,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
-  headerBtn: {
-    paddingHorizontal: 4,
-  },
-  headerBtnText: {
-    color: '#2563EB',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  image: {
-    width: '100%',
-    height: 250,
-  },
-  content: {
-    padding: 16,
-  },
-  field: {
-    backgroundColor: '#fff',
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 8,
-  },
-  label: {
-    fontSize: 12,
-    color: '#999',
-    fontWeight: '600',
-  },
-  value: {
-    fontSize: 16,
-    color: '#000',
-    marginTop: 4,
-  },
-  totalValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
+  photoHintText: { color: '#fff', fontSize: 11 },
+
+  content: { padding: 16 },
+  field: { backgroundColor: '#fff', padding: 12, marginBottom: 8, borderRadius: 8 },
+  label: { fontSize: 12, color: '#999', fontWeight: '600' },
+  value: { fontSize: 16, color: '#000', marginTop: 4 },
+  totalValue: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50' },
   fieldExpired: { borderLeftWidth: 3, borderLeftColor: '#ef4444' },
   fieldExpiring: { borderLeftWidth: 3, borderLeftColor: '#f59e0b' },
   valueExpired: { color: '#ef4444' },
   valueExpiring: { color: '#d97706' },
-  itemText: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-    marginLeft: 8,
-  },
+  itemText: { fontSize: 14, color: '#666', marginTop: 4, marginLeft: 8 },
   input: {
     marginTop: 6,
     fontSize: 16,
@@ -359,12 +386,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#2563EB',
     paddingBottom: 4,
   },
-  presets: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 10,
-    gap: 8,
-  },
+  presets: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 8 },
   preset: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -373,43 +395,46 @@ const styles = StyleSheet.create({
     borderColor: '#d1d5db',
     backgroundColor: '#f9fafb',
   },
-  presetActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+  presetActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  presetText: { fontSize: 13, color: '#374151' },
+  presetTextActive: { color: '#fff', fontWeight: '600' },
+  hintText: { marginTop: 8, fontSize: 11, color: '#9ca3af', fontStyle: 'italic' },
+
+  controls: { padding: 16, borderTopWidth: 1, borderTopColor: '#eee' },
+  button: { paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  saveButton: { backgroundColor: '#2563EB' },
+  deleteButton: { backgroundColor: '#f44336' },
+  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+
+  // Modal
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
   },
-  presetText: {
-    fontSize: 13,
-    color: '#374151',
-  },
-  presetTextActive: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  hintText: {
-    marginTop: 8,
-    fontSize: 11,
-    color: '#9ca3af',
-    fontStyle: 'italic',
-  },
-  controls: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  button: {
-    paddingVertical: 12,
-    borderRadius: 8,
+  modalScroll: { flex: 1 },
+  modalContent: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.82,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  saveButton: {
-    backgroundColor: '#2563EB',
+  modalImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.82,
   },
-  deleteButton: {
-    backgroundColor: '#f44336',
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 16,
+    paddingBottom: 32,
   },
-  buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
+  modalBtn: {
+    flex: 1,
+    backgroundColor: '#2563eb',
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignItems: 'center',
   },
+  modalBtnClose: { backgroundColor: '#374151' },
+  modalBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

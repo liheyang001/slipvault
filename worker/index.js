@@ -18,7 +18,7 @@ Return JSON with this exact structure (no markdown, no explanation, just JSON):
 {
   "isInvoice": boolean,
   "vendor": "store or merchant name",
-  "date": "YYYY-MM-DD or empty string",
+  "date": "YYYY-MM-DD HH:MM if time is printed on receipt, otherwise YYYY-MM-DD, or empty string",
   "items": [
     { "name": "item name", "quantity": 1, "unitPrice": 0.00, "totalPrice": 0.00 }
   ],

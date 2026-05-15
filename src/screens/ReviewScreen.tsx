@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   StyleSheet,
+  Animated,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
@@ -35,23 +36,46 @@ export default function ReviewScreen({ route, navigation }: Props) {
   const [extracted, setExtracted] = useState<ExtractedInvoiceData | null>(null);
   const [networkError, setNetworkError] = useState(false);
 
-  // Editable fields
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState('');
   const [category, setCategory] = useState('');
   const [warrantyMonths, setWarrantyMonths] = useState(0);
 
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const progressAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+
   useEffect(() => {
     runExtraction();
   }, [photoUri]);
 
+  function startProgress() {
+    progressAnim.setValue(0);
+    progressAnimRef.current = Animated.timing(progressAnim, {
+      toValue: 0.88,
+      duration: 14000,
+      useNativeDriver: false,
+    });
+    progressAnimRef.current.start();
+  }
+
+  function finishProgress() {
+    progressAnimRef.current?.stop();
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  }
+
   async function runExtraction() {
     setLoading(true);
     setNetworkError(false);
+    startProgress();
 
     try {
       const processed = await processInvoiceImage(photoUri);
       const data = await extractInvoiceData(processed.base64);
+      finishProgress();
 
       if (!data.isInvoice) {
         Alert.alert(
@@ -73,6 +97,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
 
       applyExtracted(data);
     } catch {
+      finishProgress();
       setNetworkError(true);
     } finally {
       setLoading(false);
@@ -172,12 +197,15 @@ export default function ReviewScreen({ route, navigation }: Props) {
     ? `Save & Next (${remaining} left)`
     : 'Save Invoice';
 
+  const progressWidth = progressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
   return (
     <View style={styles.container}>
-      {/* Photo */}
       <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
 
-      {/* Progress badge for batch */}
       {remaining > 0 && (
         <View style={styles.batchBadge}>
           <Text style={styles.batchBadgeText}>{remaining + 1} photos left</Text>
@@ -185,10 +213,12 @@ export default function ReviewScreen({ route, navigation }: Props) {
       )}
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        {/* Loading */}
+        {/* Progress bar */}
         {loading && (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator color="#2563eb" />
+          <View style={styles.progressContainer}>
+            <View style={styles.progressTrack}>
+              <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
+            </View>
             <Text style={styles.loadingText}>Analyzing invoice...</Text>
           </View>
         )}
@@ -229,7 +259,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
                   style={styles.input}
                   value={date}
                   onChangeText={setDate}
-                  placeholder="YYYY-MM-DD"
+                  placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM"
                   placeholderTextColor="#9ca3af"
                   keyboardType="numbers-and-punctuation"
                 />
@@ -305,7 +335,6 @@ export default function ReviewScreen({ route, navigation }: Props) {
         )}
       </ScrollView>
 
-      {/* Bottom controls */}
       {!loading && (
         <View style={styles.controls}>
           <TouchableOpacity
@@ -347,14 +376,24 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { padding: 16, gap: 12 },
 
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  progressContainer: {
     padding: 20,
-    justifyContent: 'center',
+    gap: 12,
+    alignItems: 'center',
   },
-  loadingText: { fontSize: 15, color: '#6b7280' },
+  progressTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#2563eb',
+    borderRadius: 3,
+  },
+  loadingText: { fontSize: 14, color: '#6b7280' },
 
   errorBox: {
     backgroundColor: '#fff',

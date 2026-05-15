@@ -11,9 +11,9 @@ export interface ProcessedImage {
 export async function processInvoiceImage(uri: string): Promise<ProcessedImage> {
   const result = await ImageManipulator.manipulateAsync(
     uri,
-    [{ resize: { width: 1200 } }],
+    [{ resize: { width: 800 } }],
     {
-      compress: 0.8,
+      compress: 0.65,
       format: ImageManipulator.SaveFormat.JPEG,
       base64: true,
     }
