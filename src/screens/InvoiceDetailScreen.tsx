@@ -7,14 +7,15 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  SafeAreaView,
   TextInput,
   Modal,
   Dimensions,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system/legacy';
 import { getInvoiceById, deleteInvoice, updateInvoice, getUserCategories, saveUserCategory } from '../services/database';
 import { cancelWarrantyReminder, scheduleWarrantyReminder } from '../services/notifications';
 import { Invoice } from '../types/invoice';
@@ -141,11 +142,15 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       Alert.alert('Permission needed', 'Please allow photo library access to save the image.');
       return;
     }
+    const cacheUri = `${FileSystem.cacheDirectory}save_tmp_${Date.now()}.jpg`;
     try {
-      await MediaLibrary.saveToLibraryAsync(invoice.photoUri);
+      await FileSystem.copyAsync({ from: invoice.photoUri, to: cacheUri });
+      await MediaLibrary.saveToLibraryAsync(cacheUri);
       Alert.alert('Saved', 'Photo saved to your gallery.');
-    } catch {
-      Alert.alert('Error', 'Failed to save photo.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to save photo.');
+    } finally {
+      FileSystem.deleteAsync(cacheUri, { idempotent: true }).catch(() => {});
     }
   };
 

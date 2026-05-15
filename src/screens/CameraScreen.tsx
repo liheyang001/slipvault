@@ -120,13 +120,14 @@ export default function CameraScreen() {
   return (
     <View style={styles.container}>
       {/* Camera viewfinder */}
-      {isFocused && (
-        <CameraView ref={cameraRef} style={styles.camera} facing={'back' as CameraType}>
-          <View style={styles.overlay}>
-            <View style={styles.frame} />
-          </View>
-        </CameraView>
-      )}
+      <View style={styles.cameraWrapper}>
+        {isFocused && (
+          <CameraView ref={cameraRef} style={styles.camera} facing={'back' as CameraType} />
+        )}
+        <View style={styles.overlay} pointerEvents="none">
+          <View style={styles.frame} />
+        </View>
+      </View>
 
       {/* Thumbnail tray */}
       {queue.length > 0 && (
@@ -190,8 +191,14 @@ export default function CameraScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
+  cameraWrapper: { flex: 1 },
   camera: { flex: 1 },
-  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  overlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   frame: {
     width: 300,
     height: 400,
