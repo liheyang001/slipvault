@@ -16,9 +16,11 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   useEffect(() => {
-    initDatabase();
-    initNotifications();
-    refreshMonthlyNotification();
+    try {
+      initDatabase();
+      initNotifications();
+    } catch {}
+    refreshMonthlyNotification().catch(() => {});
   }, []);
 
   async function refreshMonthlyNotification() {

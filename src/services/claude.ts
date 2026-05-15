@@ -11,13 +11,12 @@ export interface ExtractedInvoiceData {
   category: string;
 }
 
+const FALLBACK_PROXY_URL = 'https://invoice-reader-proxy.womendemiao.workers.dev';
+
 export async function extractInvoiceData(
   imageBase64: string
 ): Promise<ExtractedInvoiceData> {
-  const proxyUrl = process.env.EXPO_PUBLIC_AI_PROXY_URL;
-  if (!proxyUrl) {
-    throw new Error('EXPO_PUBLIC_AI_PROXY_URL is not set. Please configure it in your .env file.');
-  }
+  const proxyUrl = process.env.EXPO_PUBLIC_AI_PROXY_URL || FALLBACK_PROXY_URL;
 
   const response = await fetch(proxyUrl, {
     method: 'POST',
