@@ -283,8 +283,16 @@ export default function HomeScreen() {
             <Text style={styles.emptySubtitle}>
               {selectedCategory
                 ? 'Try a different category or clear the filter.'
-                : 'Tap the + button to photograph your first invoice.'}
+                : 'Photograph a receipt and AI will extract the data automatically.'}
             </Text>
+            {!selectedCategory && (
+              <TouchableOpacity
+                style={styles.emptyBtn}
+                onPress={() => navigation.navigate('Camera')}
+              >
+                <Text style={styles.emptyBtnText}>Photograph an Invoice</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
       />
@@ -404,6 +412,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 48,
     lineHeight: 20,
   },
+  emptyBtn: {
+    marginTop: 20,
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 28,
+    paddingVertical: 13,
+    borderRadius: 12,
+  },
+  emptyBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
   // FAB
   fab: {

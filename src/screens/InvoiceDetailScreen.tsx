@@ -42,6 +42,9 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const [editDate, setEditDate] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editWarrantyMonths, setEditWarrantyMonths] = useState(0);
+  const [editSubtotal, setEditSubtotal] = useState('');
+  const [editTax, setEditTax] = useState('');
+  const [editTotal, setEditTotal] = useState('');
   const [categoryPresets, setCategoryPresets] = useState<string[]>(DEFAULT_CATEGORIES);
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
 
@@ -116,6 +119,9 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     setEditDate(invoice.date ?? '');
     setEditCategory(normalizeCategory(invoice.category ?? ''));
     setEditWarrantyMonths(invoice.warrantyMonths ?? 0);
+    setEditSubtotal(invoice.subtotal.toFixed(2));
+    setEditTax(invoice.tax.toFixed(2));
+    setEditTotal(invoice.total.toFixed(2));
     setIsEditing(true);
   };
 
@@ -133,11 +139,17 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       ];
       setCategoryPresets(merged);
     }
+    const subtotal = parseFloat(editSubtotal) || 0;
+    const tax = parseFloat(editTax) || 0;
+    const total = parseFloat(editTotal) || 0;
     updateInvoice(invoice.id, {
       vendor: editVendor.trim(),
       date: editDate.trim(),
       category: normalized,
       warrantyMonths: editWarrantyMonths,
+      subtotal,
+      tax,
+      total,
     });
 
     if (invoice.warrantyNotifId) {
@@ -299,19 +311,34 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
           {/* Subtotal */}
           <View style={styles.field}>
             <Text style={styles.label}>Subtotal</Text>
-            <Text style={styles.value}>${invoice.subtotal.toFixed(2)}</Text>
+            {isEditing ? (
+              <TextInput style={styles.input} value={editSubtotal} onChangeText={setEditSubtotal}
+                keyboardType="decimal-pad" placeholder="0.00" />
+            ) : (
+              <Text style={styles.value}>${invoice.subtotal.toFixed(2)}</Text>
+            )}
           </View>
 
           {/* Tax */}
           <View style={styles.field}>
             <Text style={styles.label}>Tax</Text>
-            <Text style={styles.value}>${invoice.tax.toFixed(2)}</Text>
+            {isEditing ? (
+              <TextInput style={styles.input} value={editTax} onChangeText={setEditTax}
+                keyboardType="decimal-pad" placeholder="0.00" />
+            ) : (
+              <Text style={styles.value}>${invoice.tax.toFixed(2)}</Text>
+            )}
           </View>
 
           {/* Total */}
           <View style={styles.field}>
             <Text style={styles.label}>Total</Text>
-            <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
+            {isEditing ? (
+              <TextInput style={[styles.input, styles.totalInput]} value={editTotal}
+                onChangeText={setEditTotal} keyboardType="decimal-pad" placeholder="0.00" />
+            ) : (
+              <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
+            )}
           </View>
 
           {/* Warranty display */}
@@ -441,6 +468,7 @@ const styles = StyleSheet.create({
   presetText: { fontSize: 13, color: '#374151' },
   presetTextActive: { color: '#fff', fontWeight: '600' },
   hintText: { marginTop: 8, fontSize: 11, color: '#9ca3af', fontStyle: 'italic' },
+  totalInput: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50' },
 
   controls: { padding: 16, borderTopWidth: 1, borderTopColor: '#eee' },
   button: { paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
