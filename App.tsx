@@ -14,12 +14,12 @@ import SettingsScreen from './src/screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+// Run before any component renders so DB tables exist when screens query them
+try { initDatabase(); } catch {}
+try { initNotifications(); } catch {}
+
 export default function App() {
   useEffect(() => {
-    try {
-      initDatabase();
-      initNotifications();
-    } catch {}
     refreshMonthlyNotification().catch(() => {});
   }, []);
 
