@@ -43,3 +43,11 @@ yarn-error.*
 
 # secrets
 google-service-account.json
+
+# Claude Code
+.claude/
+skills.md
+
+# Build output
+pages-dist/
+dist/

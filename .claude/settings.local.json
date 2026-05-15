@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(node -e \"const fs = require\\('./node_modules/expo-file-system/build/index'\\); console.log\\(Object.keys\\(fs\\).filter\\(k => k.includes\\('document'\\) || k.includes\\('Directory'\\)\\)\\)\")"
-    ]
-  }
-}
