@@ -16,6 +16,7 @@ export interface Invoice {
   tax: number;
   total: number;
   category: string;
+  room?: string; // physical location, e.g. for insurance grouping
   tags: string[];
   status?: 'pending' | 'done';
   warrantyMonths?: number; // 0 or undefined = no warranty
@@ -33,5 +34,6 @@ export interface SearchFilters {
   minTotal?: number;
   maxTotal?: number;
   category?: string;
+  room?: string;
   tags?: string[];
 }

@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { Invoice, NewInvoice, SearchFilters } from '../types/invoice';
 import { generateId } from '../utils/id';
 import { DEFAULT_CATEGORIES } from '../utils/categories';
+import { DEFAULT_ROOMS } from '../utils/rooms';
 
 const db = SQLite.openDatabaseSync('invoices.db');
 
@@ -18,6 +19,7 @@ export function initDatabase(): void {
       tax REAL DEFAULT 0,
       total REAL DEFAULT 0,
       category TEXT DEFAULT '',
+      room TEXT DEFAULT '',
       tags TEXT DEFAULT '[]',
       status TEXT DEFAULT 'done',
       warrantyMonths INTEGER DEFAULT 0,
@@ -31,6 +33,9 @@ export function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS user_categories (
       name TEXT PRIMARY KEY
     );
+    CREATE TABLE IF NOT EXISTS user_rooms (
+      name TEXT PRIMARY KEY
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -41,6 +46,7 @@ export function initDatabase(): void {
     `ALTER TABLE invoices ADD COLUMN status TEXT DEFAULT 'done'`,
     `ALTER TABLE invoices ADD COLUMN warrantyMonths INTEGER DEFAULT 0`,
     `ALTER TABLE invoices ADD COLUMN warrantyNotifId TEXT DEFAULT ''`,
+    `ALTER TABLE invoices ADD COLUMN room TEXT DEFAULT ''`,
   ];
   for (const sql of migrations) {
     try { db.execSync(sql); } catch { /* column already exists */ }
@@ -67,6 +73,40 @@ export function deleteUserCategory(name: string): void {
   db.runSync('DELETE FROM user_categories WHERE name = ?', [name.toLowerCase()]);
 }
 
+// ─── User rooms ──────────────────────────────────────────────────────────────
+
+export function getUserRooms(): string[] {
+  const rows = db.getAllSync<{ name: string }>(
+    'SELECT name FROM user_rooms ORDER BY name ASC'
+  );
+  return rows.map((r) => r.name);
+}
+
+/** Save a custom room. No-op if it already exists in defaults or user table. */
+export function saveUserRoom(name: string): void {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized || DEFAULT_ROOMS.includes(normalized)) return;
+  db.runSync('INSERT OR IGNORE INTO user_rooms (name) VALUES (?)', [normalized]);
+}
+
+export function deleteUserRoom(name: string): void {
+  db.runSync('DELETE FROM user_rooms WHERE name = ?', [name.toLowerCase()]);
+}
+
+/** Distinct non-empty rooms actually used by at least one invoice, with counts and totals. */
+export function getRoomSummaries(): { room: string; count: number; total: number }[] {
+  const rows = db.getAllSync<{ room: string; count: number; total: number }>(
+    `SELECT LOWER(room) as room, COUNT(*) as count, SUM(total) as total
+     FROM invoices
+     WHERE (status IS NULL OR status = 'done')
+       AND room IS NOT NULL
+       AND TRIM(room) != ''
+     GROUP BY LOWER(room)
+     ORDER BY room ASC`
+  );
+  return rows.map((r) => ({ room: r.room, count: r.count, total: r.total ?? 0 }));
+}
+
 // ─── Invoices ────────────────────────────────────────────────────────────────
 
 export function insertInvoice(data: NewInvoice): Invoice {
@@ -80,8 +120,8 @@ export function insertInvoice(data: NewInvoice): Invoice {
   };
 
   db.runSync(
-    `INSERT INTO invoices (id, photoUri, ocrText, vendor, date, items, subtotal, tax, total, category, tags, status, warrantyMonths, warrantyNotifId, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO invoices (id, photoUri, ocrText, vendor, date, items, subtotal, tax, total, category, room, tags, status, warrantyMonths, warrantyNotifId, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       invoice.id,
       invoice.photoUri,
@@ -93,6 +133,7 @@ export function insertInvoice(data: NewInvoice): Invoice {
       invoice.tax,
       invoice.total,
       invoice.category,
+      invoice.room ?? '',
       JSON.stringify(invoice.tags),
       invoice.status ?? 'done',
       invoice.warrantyMonths ?? 0,
@@ -164,6 +205,10 @@ export function searchInvoices(filters: SearchFilters = {}): Invoice[] {
     // Case-insensitive match so 'Toy' and 'toy' both work
     conditions.push('LOWER(category) = LOWER(?)');
     params.push(filters.category);
+  }
+  if (filters.room) {
+    conditions.push('LOWER(room) = LOWER(?)');
+    params.push(filters.room);
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`;

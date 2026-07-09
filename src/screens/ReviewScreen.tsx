@@ -15,9 +15,10 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { extractInvoiceData, ExtractedInvoiceData } from '../services/claude';
 import { processInvoiceImage } from '../services/imageProcessor';
-import { insertInvoice, findDuplicateInvoice, updateInvoice } from '../services/database';
+import { insertInvoice, findDuplicateInvoice, updateInvoice, getUserRooms, saveUserRoom } from '../services/database';
 import { scheduleWarrantyReminder } from '../services/notifications';
 import { DEFAULT_CATEGORIES, capitalize } from '../utils/categories';
+import { mergeRooms, capitalizeRoom, normalizeRoom } from '../utils/rooms';
 
 const WARRANTY_OPTIONS = [
   { label: 'None', months: 0 },
@@ -39,6 +40,8 @@ export default function ReviewScreen({ route, navigation }: Props) {
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState('');
   const [category, setCategory] = useState('');
+  const [room, setRoom] = useState('');
+  const [roomPresets, setRoomPresets] = useState<string[]>(mergeRooms([]));
   const [warrantyMonths, setWarrantyMonths] = useState(0);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -47,6 +50,10 @@ export default function ReviewScreen({ route, navigation }: Props) {
   useEffect(() => {
     runExtraction();
   }, [photoUri]);
+
+  useEffect(() => {
+    setRoomPresets(mergeRooms(getUserRooms()));
+  }, []);
 
   function startProgress() {
     progressAnim.setValue(0);
@@ -131,6 +138,9 @@ export default function ReviewScreen({ route, navigation }: Props) {
       if (!confirmed) return;
     }
 
+    const resolvedRoom = normalizeRoom(room);
+    if (resolvedRoom) saveUserRoom(resolvedRoom);
+
     setSaving(true);
     try {
       const invoice = insertInvoice({
@@ -143,6 +153,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
         tax: extracted?.tax ?? 0,
         total: resolvedTotal,
         category: category || 'other',
+        room: resolvedRoom,
         tags: [],
         status: 'done',
         warrantyMonths,
@@ -276,6 +287,31 @@ export default function ReviewScreen({ route, navigation }: Props) {
                     >
                       <Text style={[styles.chipText, category === cat && styles.chipTextActive]}>
                         {capitalize(cat)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Room (for insurance)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={room}
+                  onChangeText={setRoom}
+                  placeholder="e.g. Living Room, Kids Room..."
+                  placeholderTextColor="#9ca3af"
+                  autoCapitalize="words"
+                />
+                <View style={styles.chips}>
+                  {roomPresets.map((r) => (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.chip, normalizeRoom(room) === r && styles.chipActive]}
+                      onPress={() => setRoom(r)}
+                    >
+                      <Text style={[styles.chipText, normalizeRoom(room) === r && styles.chipTextActive]}>
+                        {capitalizeRoom(r)}
                       </Text>
                     </TouchableOpacity>
                   ))}

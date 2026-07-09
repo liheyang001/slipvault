@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../types/navigation';
 import { Invoice, SearchFilters } from '../types/invoice';
 import {
@@ -24,6 +25,7 @@ import {
 import { processInvoiceImage } from '../services/imageProcessor';
 import { extractInvoiceData } from '../services/claude';
 import InvoiceCard from '../components/InvoiceCard';
+import ViewToggle from '../components/ViewToggle';
 import { capitalize } from '../utils/categories';
 import { exportCSV, exportPDF } from '../services/exporter';
 
@@ -42,9 +44,9 @@ export default function HomeScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
           <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
-            <Text style={styles.settingsBtn}>⚙</Text>
+            <Ionicons name="settings-outline" size={22} color="#64748b" />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => handleExport()}
@@ -207,6 +209,14 @@ export default function HomeScreen() {
           <Text style={styles.filterButtonText}>{hasFilters ? 'Filtered' : 'Filter'}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Invoices / Rooms toggle */}
+      <ViewToggle
+        active="invoices"
+        onSelect={(v) => {
+          if (v === 'rooms') navigation.navigate('Rooms');
+        }}
+      />
 
       {/* Category chip bar */}
       <ScrollView
@@ -440,7 +450,6 @@ const styles = StyleSheet.create({
   },
   fabText: { color: '#fff', fontSize: 30, lineHeight: 34, fontWeight: '300' },
 
-  settingsBtn: { color: '#94a3b8', fontSize: 18, paddingHorizontal: 4 },
   exportBtn: { color: '#2563eb', fontSize: 16, fontWeight: '600' },
   exportBtnDisabled: { color: '#cbd5e1' },
 });

@@ -6,5 +6,6 @@ export type RootStackParamList = {
   Review: { photoUri: string; queue?: string[] };
   InvoiceDetail: { invoiceId: string };
   Search: { filters?: SearchFilters } | undefined;
+  Rooms: undefined;
   Settings: undefined;
 };

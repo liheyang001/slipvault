@@ -18,11 +18,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
-import { getInvoiceById, deleteInvoice, updateInvoice, getUserCategories, saveUserCategory } from '../services/database';
+import { getInvoiceById, deleteInvoice, updateInvoice, getUserCategories, saveUserCategory, getUserRooms, saveUserRoom } from '../services/database';
 import { cancelWarrantyReminder, scheduleWarrantyReminder } from '../services/notifications';
 import { Invoice } from '../types/invoice';
 import { RootStackParamList } from '../types/navigation';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
+import { mergeRooms, capitalizeRoom, normalizeRoom } from '../utils/rooms';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -41,6 +42,8 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const [editVendor, setEditVendor] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editCategory, setEditCategory] = useState('');
+  const [editRoom, setEditRoom] = useState('');
+  const [roomPresets, setRoomPresets] = useState<string[]>(mergeRooms([]));
   const [editWarrantyMonths, setEditWarrantyMonths] = useState(0);
   const [editSubtotal, setEditSubtotal] = useState('');
   const [editTax, setEditTax] = useState('');
@@ -115,9 +118,11 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       ...userCats.filter((c) => !DEFAULT_CATEGORIES.includes(c)),
     ];
     setCategoryPresets(merged);
+    setRoomPresets(mergeRooms(getUserRooms()));
     setEditVendor(invoice.vendor ?? '');
     setEditDate(invoice.date ?? '');
     setEditCategory(normalizeCategory(invoice.category ?? ''));
+    setEditRoom(normalizeRoom(invoice.room ?? ''));
     setEditWarrantyMonths(invoice.warrantyMonths ?? 0);
     setEditSubtotal(invoice.subtotal.toFixed(2));
     setEditTax(invoice.tax.toFixed(2));
@@ -139,6 +144,11 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       ];
       setCategoryPresets(merged);
     }
+    const normalizedRoom = normalizeRoom(editRoom);
+    if (normalizedRoom) {
+      saveUserRoom(normalizedRoom);
+      setRoomPresets(mergeRooms(getUserRooms()));
+    }
     const subtotal = parseFloat(editSubtotal) || 0;
     const tax = parseFloat(editTax) || 0;
     const total = parseFloat(editTotal) || 0;
@@ -146,6 +156,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       vendor: editVendor.trim(),
       date: editDate.trim(),
       category: normalized,
+      room: normalizedRoom,
       warrantyMonths: editWarrantyMonths,
       subtotal,
       tax,
@@ -285,6 +296,38 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
               </View>
             ) : (
               <Text style={styles.value}>{capitalize(invoice.category) || 'Other'}</Text>
+            )}
+          </View>
+
+          {/* Room */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Room (for insurance)</Text>
+            {isEditing ? (
+              <View>
+                <TextInput
+                  style={styles.input}
+                  value={editRoom}
+                  onChangeText={setEditRoom}
+                  placeholder="e.g. Living Room, Kids Room..."
+                  autoCapitalize="words"
+                />
+                <View style={styles.presets}>
+                  {roomPresets.map((r) => (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.preset, normalizeRoom(editRoom) === r && styles.presetActive]}
+                      onPress={() => setEditRoom(r)}
+                    >
+                      <Text style={[styles.presetText, normalizeRoom(editRoom) === r && styles.presetTextActive]}>
+                        {capitalizeRoom(r)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={styles.hintText}>Custom rooms are saved automatically for future use.</Text>
+              </View>
+            ) : (
+              <Text style={styles.value}>{capitalizeRoom(invoice.room ?? '') || '—'}</Text>
             )}
           </View>
 
