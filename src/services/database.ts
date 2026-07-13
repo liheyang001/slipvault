@@ -36,6 +36,14 @@ export function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS user_rooms (
       name TEXT PRIMARY KEY
     );
+    CREATE TABLE IF NOT EXISTS ai_valuations (
+      invoiceId TEXT NOT NULL,
+      itemIndex INTEGER NOT NULL,
+      value REAL NOT NULL,
+      note TEXT DEFAULT '',
+      valuedAt TEXT NOT NULL,
+      PRIMARY KEY (invoiceId, itemIndex)
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -91,6 +99,15 @@ export function saveUserRoom(name: string): void {
 
 export function deleteUserRoom(name: string): void {
   db.runSync('DELETE FROM user_rooms WHERE name = ?', [name.toLowerCase()]);
+}
+
+/** Move every invoice in one room to another. Returns the number of invoices moved. */
+export function moveRoomInvoices(fromRoom: string, toRoom: string): number {
+  const result = db.runSync(
+    `UPDATE invoices SET room = ?, updatedAt = ? WHERE LOWER(TRIM(room)) = LOWER(TRIM(?))`,
+    [toRoom.trim().toLowerCase(), new Date().toISOString(), fromRoom]
+  );
+  return result.changes;
 }
 
 /** Distinct non-empty rooms actually used by at least one invoice, with counts and totals. */
@@ -166,6 +183,34 @@ export function updateInvoice(id: string, data: Partial<NewInvoice>): void {
 
 export function deleteInvoice(id: string): void {
   db.runSync('DELETE FROM invoices WHERE id = ?', [id]);
+  db.runSync('DELETE FROM ai_valuations WHERE invoiceId = ?', [id]);
+}
+
+// ─── AI valuations (contents insurance) ──────────────────────────────────────
+
+export interface AIValuationRow {
+  invoiceId: string;
+  itemIndex: number; // -1 = whole invoice (itemless receipts)
+  value: number;
+  note: string;
+  valuedAt: string;
+}
+
+export function saveAIValuation(
+  invoiceId: string,
+  itemIndex: number,
+  value: number,
+  note: string
+): void {
+  db.runSync(
+    `INSERT OR REPLACE INTO ai_valuations (invoiceId, itemIndex, value, note, valuedAt)
+     VALUES (?, ?, ?, ?, ?)`,
+    [invoiceId, itemIndex, value, note, new Date().toISOString()]
+  );
+}
+
+export function getAIValuations(): AIValuationRow[] {
+  return db.getAllSync<AIValuationRow>('SELECT * FROM ai_valuations');
 }
 
 export function getInvoiceById(id: string): Invoice | null {
@@ -271,7 +316,16 @@ export function setSetting(key: string, value: string): void {
   db.runSync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
 }
 
-// ─── Scan quota ───────────────────────────────────────────────────────────────
+// ─── Free plan quota ─────────────────────────────────────────────────────────
+
+/** Free plan: up to this many stored invoices. Pro = unlimited. */
+export const FREE_INVOICE_LIMIT = 20;
+
+/** Total invoices currently stored (pending ones occupy slots too). */
+export function getInvoiceCount(): number {
+  const row = db.getFirstSync<{ c: number }>('SELECT COUNT(*) as c FROM invoices');
+  return row?.c ?? 0;
+}
 
 export const FREE_SCAN_LIMIT = 15;
 

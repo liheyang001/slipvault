@@ -9,16 +9,33 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getSetting, setSetting, getAllInvoices } from '../services/database';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../types/navigation';
+import {
+  getSetting,
+  setSetting,
+  getAllInvoices,
+  isProUser,
+  getInvoiceCount,
+  FREE_INVOICE_LIMIT,
+} from '../services/database';
 import { scheduleMonthlyReminder, cancelScheduledNotification } from '../services/notifications';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
 
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
+
 export default function SettingsScreen() {
+  const navigation = useNavigation<Nav>();
   const [monthlyEnabled, setMonthlyEnabled] = useState(false);
+  const [pro, setPro] = useState(false);
+  const [invoiceCount, setInvoiceCount] = useState(0);
 
   useEffect(() => {
     setMonthlyEnabled(getSetting('monthlyNotif', 'false') === 'true');
+    setPro(isProUser());
+    setInvoiceCount(getInvoiceCount());
   }, []);
 
   async function handleMonthlyToggle(value: boolean) {
@@ -61,6 +78,26 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Pro / plan */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Plan</Text>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => navigation.navigate('Paywall')}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>{pro ? 'Slipvault Pro ✓' : 'Free plan'}</Text>
+            <Text style={styles.rowSub}>
+              {pro
+                ? 'Unlimited invoices — thank you for your support!'
+                : `${Math.min(invoiceCount, FREE_INVOICE_LIMIT)}/${FREE_INVOICE_LIMIT} free invoices used · tap to upgrade`}
+            </Text>
+          </View>
+          {!pro && <Text style={styles.chevron}>›</Text>}
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Notifications</Text>
 

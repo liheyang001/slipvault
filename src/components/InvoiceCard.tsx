@@ -5,7 +5,8 @@ import { Invoice } from '../types/invoice';
 interface Props {
   invoice: Invoice;
   onPress: () => void;
-  onDelete: () => void;
+  onDelete?: () => void; // omit to hide the delete button
+  onLongPress?: () => void;
 }
 
 // Category config: accent color + emoji icon
@@ -22,7 +23,7 @@ const CATEGORY_CONFIG: Record<string, { color: string; bg: string; icon: string 
 
 const DEFAULT_CONFIG = { color: '#6b7280', bg: '#f3f4f6', icon: '📄' };
 
-export default function InvoiceCard({ invoice, onPress, onDelete }: Props) {
+export default function InvoiceCard({ invoice, onPress, onDelete, onLongPress }: Props) {
   const cfg = CATEGORY_CONFIG[invoice.category?.toLowerCase()] ?? DEFAULT_CONFIG;
 
   const formattedDate = invoice.date
@@ -40,7 +41,12 @@ export default function InvoiceCard({ invoice, onPress, onDelete }: Props) {
   })();
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity
+      style={styles.card}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      activeOpacity={0.75}
+    >
       {/* Left accent stripe */}
       <View style={[styles.stripe, { backgroundColor: cfg.color }]} />
 
@@ -80,13 +86,15 @@ export default function InvoiceCard({ invoice, onPress, onDelete }: Props) {
       </View>
 
       {/* Delete */}
-      <TouchableOpacity
-        style={styles.deleteZone}
-        onPress={onDelete}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 4 }}
-      >
-        <Text style={styles.deleteIcon}>×</Text>
-      </TouchableOpacity>
+      {onDelete && (
+        <TouchableOpacity
+          style={styles.deleteZone}
+          onPress={onDelete}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 4 }}
+        >
+          <Text style={styles.deleteIcon}>×</Text>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }

@@ -21,6 +21,9 @@ import {
   getPendingInvoices,
   updateInvoice,
   getUsedCategories,
+  isProUser,
+  getInvoiceCount,
+  FREE_INVOICE_LIMIT,
 } from '../services/database';
 import { processInvoiceImage } from '../services/imageProcessor';
 import { extractInvoiceData } from '../services/claude';
@@ -40,6 +43,7 @@ export default function HomeScreen() {
   const [categoryList, setCategoryList] = useState<string[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
+  const [quota, setQuota] = useState<{ pro: boolean; count: number }>({ pro: true, count: 0 });
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -91,6 +95,7 @@ export default function HomeScreen() {
     useCallback(() => {
       // Show only categories that actually exist in invoices
       setCategoryList(getUsedCategories());
+      setQuota({ pro: isProUser(), count: getInvoiceCount() });
 
       const filters: SearchFilters = {
         ...activeFilters,
@@ -215,6 +220,7 @@ export default function HomeScreen() {
         active="invoices"
         onSelect={(v) => {
           if (v === 'rooms') navigation.navigate('Rooms');
+          if (v === 'insurance') navigation.navigate('Insurance');
         }}
       />
 
@@ -237,6 +243,20 @@ export default function HomeScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* Free quota banner (shown when close to the cap) */}
+      {!quota.pro && quota.count >= FREE_INVOICE_LIMIT - 5 && (
+        <TouchableOpacity
+          style={styles.quotaBanner}
+          onPress={() => navigation.navigate('Paywall')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.quotaText}>
+            {Math.min(quota.count, FREE_INVOICE_LIMIT)}/{FREE_INVOICE_LIMIT} free invoices used
+          </Text>
+          <Text style={styles.quotaAction}>Go Pro</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Pending invoices banner */}
       {pendingCount > 0 && (
@@ -375,6 +395,20 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#2563eb' },
   chipText: { fontSize: 13, color: '#475569', fontWeight: '500' },
   chipTextActive: { color: '#fff', fontWeight: '700' },
+
+  // Quota banner
+  quotaBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#eff6ff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#dbeafe',
+  },
+  quotaText: { fontSize: 13, color: '#1d4ed8', fontWeight: '600' },
+  quotaAction: { fontSize: 13, color: '#2563eb', fontWeight: '800' },
 
   // Pending banner
   pendingBanner: {

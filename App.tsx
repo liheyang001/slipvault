@@ -12,6 +12,8 @@ import ReviewScreen from './src/screens/ReviewScreen';
 import InvoiceDetailScreen from './src/screens/InvoiceDetailScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import RoomsScreen from './src/screens/RoomsScreen';
+import InsuranceScreen from './src/screens/InsuranceScreen';
+import PaywallScreen from './src/screens/PaywallScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -85,6 +87,16 @@ export default function App() {
           name="Rooms"
           component={RoomsScreen}
           options={{ title: 'Rooms' }}
+        />
+        <Stack.Screen
+          name="Insurance"
+          component={InsuranceScreen}
+          options={{ title: 'Insurance' }}
+        />
+        <Stack.Screen
+          name="Paywall"
+          component={PaywallScreen}
+          options={{ title: '', presentation: 'modal', headerShown: false }}
         />
         <Stack.Screen
           name="Settings"

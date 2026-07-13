@@ -1,35 +1,38 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
-export type ToggleView = 'invoices' | 'rooms';
+export type ToggleView = 'invoices' | 'rooms' | 'insurance';
+
+const SEGMENTS: { key: ToggleView; label: string }[] = [
+  { key: 'invoices', label: '🧾 Invoices' },
+  { key: 'rooms', label: '🏠 Rooms' },
+  { key: 'insurance', label: '🛡️ Insurance' },
+];
 
 interface Props {
   active: ToggleView;
   onSelect: (view: ToggleView) => void;
 }
 
-/** iOS-style segmented control to switch between the Invoices and Rooms views. */
+/** iOS-style segmented control to switch between top-level views. */
 export default function ViewToggle({ active, onSelect }: Props) {
   return (
     <View style={styles.wrap}>
-      <TouchableOpacity
-        style={[styles.seg, active === 'invoices' && styles.segActive]}
-        onPress={() => onSelect('invoices')}
-        activeOpacity={0.85}
-      >
-        <Text style={[styles.segText, active === 'invoices' && styles.segTextActive]}>
-          🧾  Invoices
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.seg, active === 'rooms' && styles.segActive]}
-        onPress={() => onSelect('rooms')}
-        activeOpacity={0.85}
-      >
-        <Text style={[styles.segText, active === 'rooms' && styles.segTextActive]}>
-          🏠  Rooms
-        </Text>
-      </TouchableOpacity>
+      {SEGMENTS.map((seg) => (
+        <TouchableOpacity
+          key={seg.key}
+          style={[styles.seg, active === seg.key && styles.segActive]}
+          onPress={() => onSelect(seg.key)}
+          activeOpacity={0.85}
+        >
+          <Text
+            style={[styles.segText, active === seg.key && styles.segTextActive]}
+            numberOfLines={1}
+          >
+            {seg.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
@@ -60,6 +63,6 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 2,
   },
-  segText: { fontSize: 14, color: '#64748b', fontWeight: '600' },
+  segText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
   segTextActive: { color: '#0f172a', fontWeight: '700' },
 });

@@ -7,5 +7,7 @@ export type RootStackParamList = {
   InvoiceDetail: { invoiceId: string };
   Search: { filters?: SearchFilters } | undefined;
   Rooms: undefined;
+  Insurance: undefined;
+  Paywall: undefined;
   Settings: undefined;
 };
