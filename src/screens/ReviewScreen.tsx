@@ -30,7 +30,7 @@ const WARRANTY_OPTIONS = [
 type Props = NativeStackScreenProps<RootStackParamList, 'Review'>;
 
 export default function ReviewScreen({ route, navigation }: Props) {
-  const { photoUri, queue = [] } = route.params;
+  const { photoUri, queue = [], defaultRoom } = route.params;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,7 +40,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState('');
   const [category, setCategory] = useState('');
-  const [room, setRoom] = useState('');
+  const [room, setRoom] = useState(defaultRoom ?? ''); // pre-filled when scanning from a room
   const [roomPresets, setRoomPresets] = useState<string[]>(mergeRooms([]));
   const [warrantyMonths, setWarrantyMonths] = useState(0);
 
@@ -168,7 +168,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
       }
 
       if (queue.length > 0) {
-        navigation.replace('Review', { photoUri: queue[0], queue: queue.slice(1) });
+        navigation.replace('Review', { photoUri: queue[0], queue: queue.slice(1), defaultRoom });
       } else {
         navigation.replace('InvoiceDetail', { invoiceId: invoice.id });
       }
@@ -195,7 +195,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
     });
 
     if (queue.length > 0) {
-      navigation.replace('Review', { photoUri: queue[0], queue: queue.slice(1) });
+      navigation.replace('Review', { photoUri: queue[0], queue: queue.slice(1), defaultRoom });
     } else {
       navigation.replace('Home');
     }
@@ -265,7 +265,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Date</Text>
+                <Text style={styles.label}>Purchase Date</Text>
                 <TextInput
                   style={styles.input}
                   value={date}
@@ -339,16 +339,14 @@ export default function ReviewScreen({ route, navigation }: Props) {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Amounts</Text>
               <View style={styles.amountRow}>
-                <Text style={styles.amountLabel}>Subtotal</Text>
-                <Text style={styles.amountValue}>${extracted.subtotal.toFixed(2)}</Text>
-              </View>
-              <View style={styles.amountRow}>
-                <Text style={styles.amountLabel}>Tax</Text>
-                <Text style={styles.amountValue}>${extracted.tax.toFixed(2)}</Text>
-              </View>
-              <View style={[styles.amountRow, styles.totalRow]}>
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>${extracted.total.toFixed(2)}</Text>
+                <View>
+                  <Text style={styles.amountLabel}>Excl. GST</Text>
+                  <Text style={styles.amountValue}>${extracted.subtotal.toFixed(2)}</Text>
+                </View>
+                <View style={styles.amountColRight}>
+                  <Text style={styles.amountLabel}>Incl. GST</Text>
+                  <Text style={styles.totalValue}>${extracted.total.toFixed(2)}</Text>
+                </View>
               </View>
             </View>
 
@@ -486,15 +484,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 4,
   },
-  totalRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    paddingTop: 10,
-    marginTop: 4,
-  },
-  amountLabel: { fontSize: 14, color: '#6b7280' },
-  amountValue: { fontSize: 14, color: '#374151' },
-  totalLabel: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  amountColRight: { alignItems: 'flex-end' },
+  amountLabel: { fontSize: 12, color: '#6b7280', marginBottom: 2 },
+  amountValue: { fontSize: 16, color: '#374151', fontWeight: '600' },
   totalValue: { fontSize: 16, fontWeight: '700', color: '#2563eb' },
 
   itemRow: {

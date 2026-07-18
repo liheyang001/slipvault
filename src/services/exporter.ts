@@ -16,7 +16,7 @@ function escapeCSV(value: string | number | undefined): string {
 }
 
 export async function exportCSV(invoices: Invoice[]): Promise<void> {
-  const header = ['Date', 'Merchant', 'Category', 'Subtotal', 'Tax', 'Total', 'Items'];
+  const header = ['Purchase Date', 'Merchant', 'Category', 'Brand', 'Model', 'Serial', 'Excl. GST', 'GST', 'Incl. GST', 'Items'];
   const rows = invoices.map((inv) => {
     const itemsSummary = inv.items
       .map((it) => `${it.name} x${it.quantity}`)
@@ -25,6 +25,9 @@ export async function exportCSV(invoices: Invoice[]): Promise<void> {
       escapeCSV(inv.date),
       escapeCSV(inv.vendor),
       escapeCSV(capitalize(inv.category)),
+      escapeCSV(inv.brand ?? ''),
+      escapeCSV(inv.model ?? ''),
+      escapeCSV(inv.serialNumber ?? ''),
       escapeCSV(inv.subtotal.toFixed(2)),
       escapeCSV(inv.tax.toFixed(2)),
       escapeCSV(inv.total.toFixed(2)),
@@ -88,12 +91,12 @@ function buildPDFHtml(invoices: Invoice[]): string {
   <table>
     <thead>
       <tr>
-        <th>Date</th>
+        <th>Purchase Date</th>
         <th>Merchant</th>
         <th>Category</th>
-        <th class="num">Subtotal</th>
-        <th class="num">Tax</th>
-        <th class="num">Total</th>
+        <th class="num">Excl. GST</th>
+        <th class="num">GST</th>
+        <th class="num">Incl. GST</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -125,14 +128,20 @@ function safeFileName(s: string): string {
 
 /** CSV of a single room's invoices, including itemized lines, for an insurance claim. */
 export async function exportRoomCSV(invoices: Invoice[], roomName: string): Promise<void> {
-  const header = ['Room', 'Date', 'Merchant', 'Item', 'Quantity', 'Item Total', 'Invoice Total'];
+  const header = ['Room', 'Purchase Date', 'Merchant', 'Brand', 'Model', 'Serial', 'Item', 'Quantity', 'Item Total', 'Invoice Total (incl. GST)'];
   const rows: string[] = [];
   for (const inv of invoices) {
+    const ident = [
+      escapeCSV(inv.brand ?? ''),
+      escapeCSV(inv.model ?? ''),
+      escapeCSV(inv.serialNumber ?? ''),
+    ];
     if (inv.items.length === 0) {
       rows.push([
         escapeCSV(capitalizeRoom(roomName)),
         escapeCSV(inv.date),
         escapeCSV(inv.vendor),
+        ...ident,
         escapeCSV('—'),
         escapeCSV(''),
         escapeCSV(''),
@@ -144,6 +153,7 @@ export async function exportRoomCSV(invoices: Invoice[], roomName: string): Prom
           escapeCSV(capitalizeRoom(roomName)),
           escapeCSV(inv.date),
           escapeCSV(inv.vendor),
+          ...ident,
           escapeCSV(it.name),
           escapeCSV(it.quantity),
           escapeCSV(it.totalPrice.toFixed(2)),
@@ -179,17 +189,25 @@ function buildRoomPDFHtml(invoices: Invoice[], roomName: string): string {
               )
               .join('')
           : `<tr><td colspan="3" class="muted">No itemized details</td></tr>`;
+      const identParts = [inv.brand, inv.model].filter(Boolean).join(' ');
+      const identLine =
+        identParts || inv.serialNumber
+          ? `<div class="ident">${identParts}${
+              identParts && inv.serialNumber ? ' · ' : ''
+            }${inv.serialNumber ? `S/N: ${inv.serialNumber}` : ''}</div>`
+          : '';
       return `
       <div class="invoice">
         <div class="inv-head">
           <span class="vendor">${inv.vendor || 'Unknown'}</span>
           <span class="date">${inv.date || '—'}</span>
         </div>
+        ${identLine}
         <table class="items">
           <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th></tr></thead>
           <tbody>${itemRows}</tbody>
         </table>
-        <div class="inv-total">Invoice total: <strong>$${inv.total.toFixed(2)}</strong></div>
+        <div class="inv-total">Total (incl. GST): <strong>$${inv.total.toFixed(2)}</strong></div>
       </div>`;
     })
     .join('');
@@ -208,6 +226,7 @@ function buildRoomPDFHtml(invoices: Invoice[], roomName: string): string {
     .inv-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
     .vendor { font-weight: 700; font-size: 14px; }
     .date { color: #6b7280; font-size: 12px; }
+    .ident { color: #374151; font-size: 12px; margin: -4px 0 8px; }
     table.items { width: 100%; border-collapse: collapse; }
     .items th { text-align: left; padding: 6px 8px; background: #f9fafb; font-size: 10px; font-weight: 700;
          color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }

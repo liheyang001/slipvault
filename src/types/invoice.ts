@@ -17,10 +17,15 @@ export interface Invoice {
   total: number;
   category: string;
   room?: string; // physical location, e.g. for insurance grouping
+  itemPhotos?: string[]; // photos of the actual items (proof of ownership)
+  brand?: string; // e.g. "Apple" — insurers ask for these on claims
+  model?: string; // e.g. "MacBook Pro 14"
+  serialNumber?: string;
   tags: string[];
   status?: 'pending' | 'done';
   warrantyMonths?: number; // 0 or undefined = no warranty
   warrantyNotifId?: string; // scheduled notification id
+  note?: string; // free-form note (e.g. warranty/claim details)
   createdAt: string;
   updatedAt: string;
 }

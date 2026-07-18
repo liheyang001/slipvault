@@ -16,7 +16,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
+import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getInvoiceById, deleteInvoice, updateInvoice, getUserCategories, saveUserCategory, getUserRooms, saveUserRoom } from '../services/database';
 import { cancelWarrantyReminder, scheduleWarrantyReminder } from '../services/notifications';
@@ -43,13 +45,17 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const [editDate, setEditDate] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editRoom, setEditRoom] = useState('');
+  const [editBrand, setEditBrand] = useState('');
+  const [editModel, setEditModel] = useState('');
+  const [editSerial, setEditSerial] = useState('');
   const [roomPresets, setRoomPresets] = useState<string[]>(mergeRooms([]));
   const [editWarrantyMonths, setEditWarrantyMonths] = useState(0);
   const [editSubtotal, setEditSubtotal] = useState('');
-  const [editTax, setEditTax] = useState('');
   const [editTotal, setEditTotal] = useState('');
   const [categoryPresets, setCategoryPresets] = useState<string[]>(DEFAULT_CATEGORIES);
-  const [photoModalVisible, setPhotoModalVisible] = useState(false);
+  const [modalUri, setModalUri] = useState<string | null>(null);
+  const [noteModalVisible, setNoteModalVisible] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
 
   const scale = React.useRef(new Animated.Value(1)).current;
   const committedScale = React.useRef(1);
@@ -91,7 +97,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     scale.setValue(1);
     committedScale.current = 1;
     liveScale.current = 1;
-    setPhotoModalVisible(false);
+    setModalUri(null);
   };
 
   useEffect(() => {
@@ -123,9 +129,11 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     setEditDate(invoice.date ?? '');
     setEditCategory(normalizeCategory(invoice.category ?? ''));
     setEditRoom(normalizeRoom(invoice.room ?? ''));
+    setEditBrand(invoice.brand ?? '');
+    setEditModel(invoice.model ?? '');
+    setEditSerial(invoice.serialNumber ?? '');
     setEditWarrantyMonths(invoice.warrantyMonths ?? 0);
     setEditSubtotal(invoice.subtotal.toFixed(2));
-    setEditTax(invoice.tax.toFixed(2));
     setEditTotal(invoice.total.toFixed(2));
     setIsEditing(true);
   };
@@ -150,13 +158,17 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       setRoomPresets(mergeRooms(getUserRooms()));
     }
     const subtotal = parseFloat(editSubtotal) || 0;
-    const tax = parseFloat(editTax) || 0;
     const total = parseFloat(editTotal) || 0;
+    // Tax is no longer entered directly — keep data consistent: tax = total - subtotal
+    const tax = Math.max(0, Math.round((total - subtotal) * 100) / 100);
     updateInvoice(invoice.id, {
       vendor: editVendor.trim(),
       date: editDate.trim(),
       category: normalized,
       room: normalizedRoom,
+      brand: editBrand.trim(),
+      model: editModel.trim(),
+      serialNumber: editSerial.trim(),
       warrantyMonths: editWarrantyMonths,
       subtotal,
       tax,
@@ -204,7 +216,8 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   };
 
   const handleSavePhoto = async () => {
-    if (!invoice) return;
+    const sourceUri = modalUri ?? invoice?.photoUri;
+    if (!sourceUri) return;
     const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Please allow photo library access to save the image.');
@@ -212,7 +225,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     }
     const cacheUri = `${FileSystem.cacheDirectory}save_tmp_${Date.now()}.jpg`;
     try {
-      await FileSystem.copyAsync({ from: invoice.photoUri, to: cacheUri });
+      await FileSystem.copyAsync({ from: sourceUri, to: cacheUri });
       await MediaLibrary.saveToLibraryAsync(cacheUri);
       Alert.alert('Saved', 'Photo saved to your gallery.');
     } catch (e: any) {
@@ -221,6 +234,73 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       FileSystem.deleteAsync(cacheUri, { idempotent: true }).catch(() => {});
     }
   };
+
+  // ─── Item photos (proof of ownership) ──────────────────────────────────────
+
+  async function persistItemPhoto(uri: string): Promise<string> {
+    const dir = `${FileSystem.documentDirectory}item_photos/`;
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+    const dest = `${dir}item_${Date.now()}_${Math.floor(Math.random() * 1e6)}.jpg`;
+    await FileSystem.copyAsync({ from: uri, to: dest });
+    return dest;
+  }
+
+  async function pickItemPhoto(useCamera: boolean) {
+    if (!invoice) return;
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      if (useCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permission needed', 'Camera access is required to photograph items.');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+      } else {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsMultipleSelection: true,
+          quality: 0.7,
+        });
+      }
+      if (result.canceled || result.assets.length === 0) return;
+
+      const saved: string[] = [];
+      for (const asset of result.assets) {
+        saved.push(await persistItemPhoto(asset.uri));
+      }
+      updateInvoice(invoice.id, { itemPhotos: [...(invoice.itemPhotos ?? []), ...saved] });
+      setInvoice(getInvoiceById(invoice.id));
+    } catch {
+      Alert.alert('Error', 'Failed to add photo. Please try again.');
+    }
+  }
+
+  function handleAddItemPhoto() {
+    Alert.alert('Add Item Photo', 'Photograph the actual item as proof of ownership.', [
+      { text: 'Take Photo', onPress: () => pickItemPhoto(true) },
+      { text: 'Choose from Gallery', onPress: () => pickItemPhoto(false) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  function handleRemoveItemPhoto(uri: string) {
+    if (!invoice) return;
+    Alert.alert('Remove Photo', 'Remove this item photo?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          updateInvoice(invoice.id, {
+            itemPhotos: (invoice.itemPhotos ?? []).filter((u) => u !== uri),
+          });
+          FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+          setInvoice(getInvoiceById(invoice.id));
+        },
+      },
+    ]);
+  }
 
   if (!invoice) {
     return (
@@ -234,7 +314,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     <SafeAreaView style={styles.container}>
       <ScrollView>
         {/* Tappable photo */}
-        <TouchableOpacity onPress={() => setPhotoModalVisible(true)} activeOpacity={0.9}>
+        <TouchableOpacity onPress={() => setModalUri(invoice.photoUri)} activeOpacity={0.9}>
           <Image source={{ uri: invoice.photoUri }} style={styles.image} />
           <View style={styles.photoHint}>
             <Text style={styles.photoHintText}>Tap to enlarge</Text>
@@ -254,7 +334,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
 
           {/* Date */}
           <View style={styles.field}>
-            <Text style={styles.label}>Date</Text>
+            <Text style={styles.label}>Purchase Date</Text>
             {isEditing ? (
               <TextInput
                 style={styles.input}
@@ -267,7 +347,24 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
             )}
           </View>
 
-          {/* Category */}
+          {/* Category + Room on one line (view mode) */}
+          {!isEditing && (
+            <View style={styles.field}>
+              <View style={styles.pairRow}>
+                <View>
+                  <Text style={styles.label}>Category</Text>
+                  <Text style={styles.value}>{capitalize(invoice.category) || 'Other'}</Text>
+                </View>
+                <View style={styles.pairRight}>
+                  <Text style={styles.label}>Room</Text>
+                  <Text style={styles.value}>{capitalizeRoom(invoice.room ?? '') || '—'}</Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Category (edit mode) */}
+          {isEditing && (
           <View style={styles.field}>
             <Text style={styles.label}>Category</Text>
             {isEditing ? (
@@ -294,12 +391,12 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                 </View>
                 <Text style={styles.hintText}>Custom categories are saved automatically for future use.</Text>
               </View>
-            ) : (
-              <Text style={styles.value}>{capitalize(invoice.category) || 'Other'}</Text>
-            )}
+            ) : null}
           </View>
+          )}
 
-          {/* Room */}
+          {/* Room (edit mode) */}
+          {isEditing && (
           <View style={styles.field}>
             <Text style={styles.label}>Room (for insurance)</Text>
             {isEditing ? (
@@ -326,10 +423,57 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                 </View>
                 <Text style={styles.hintText}>Custom rooms are saved automatically for future use.</Text>
               </View>
-            ) : (
-              <Text style={styles.value}>{capitalizeRoom(invoice.room ?? '') || '—'}</Text>
-            )}
+            ) : null}
           </View>
+          )}
+
+          {/* Brand / Model / Serial (for insurance claims) */}
+          {isEditing ? (
+            <>
+              <View style={styles.field}>
+                <Text style={styles.label}>Brand</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editBrand}
+                  onChangeText={setEditBrand}
+                  placeholder="e.g. Apple, IKEA, Samsung..."
+                />
+              </View>
+              <View style={styles.field}>
+                <Text style={styles.label}>Model</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editModel}
+                  onChangeText={setEditModel}
+                  placeholder="e.g. MacBook Pro 14, QN65Q80C..."
+                />
+              </View>
+              <View style={styles.field}>
+                <Text style={styles.label}>Serial Number</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editSerial}
+                  onChangeText={setEditSerial}
+                  placeholder="Usually on the item or its box"
+                  autoCapitalize="characters"
+                />
+              </View>
+            </>
+          ) : (
+            (invoice.brand || invoice.model || invoice.serialNumber) && (
+              <View style={styles.field}>
+                <Text style={styles.label}>Item Identification</Text>
+                {!!(invoice.brand || invoice.model) && (
+                  <Text style={styles.value}>
+                    {[invoice.brand, invoice.model].filter(Boolean).join(' ')}
+                  </Text>
+                )}
+                {!!invoice.serialNumber && (
+                  <Text style={styles.serialText}>S/N: {invoice.serialNumber}</Text>
+                )}
+              </View>
+            )
+          )}
 
           {/* Warranty selector (edit mode) */}
           {isEditing && (
@@ -351,57 +495,73 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Subtotal */}
+          {/* Amounts: Excl. GST / Incl. GST on one line */}
           <View style={styles.field}>
-            <Text style={styles.label}>Subtotal</Text>
-            {isEditing ? (
-              <TextInput style={styles.input} value={editSubtotal} onChangeText={setEditSubtotal}
-                keyboardType="decimal-pad" placeholder="0.00" />
-            ) : (
-              <Text style={styles.value}>${invoice.subtotal.toFixed(2)}</Text>
-            )}
+            <View style={styles.gstRow}>
+              <View style={styles.gstCol}>
+                <Text style={styles.label}>Excl. GST</Text>
+                {isEditing ? (
+                  <TextInput style={styles.input} value={editSubtotal} onChangeText={setEditSubtotal}
+                    keyboardType="decimal-pad" placeholder="0.00" />
+                ) : (
+                  <Text style={styles.value}>${invoice.subtotal.toFixed(2)}</Text>
+                )}
+              </View>
+              <View style={[styles.gstCol, !isEditing && styles.pairRight]}>
+                <Text style={styles.label}>Incl. GST</Text>
+                {isEditing ? (
+                  <TextInput style={[styles.input, styles.totalInput]} value={editTotal}
+                    onChangeText={setEditTotal} keyboardType="decimal-pad" placeholder="0.00" />
+                ) : (
+                  <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
+                )}
+              </View>
+            </View>
           </View>
 
-          {/* Tax */}
-          <View style={styles.field}>
-            <Text style={styles.label}>Tax</Text>
-            {isEditing ? (
-              <TextInput style={styles.input} value={editTax} onChangeText={setEditTax}
-                keyboardType="decimal-pad" placeholder="0.00" />
-            ) : (
-              <Text style={styles.value}>${invoice.tax.toFixed(2)}</Text>
-            )}
-          </View>
-
-          {/* Total */}
-          <View style={styles.field}>
-            <Text style={styles.label}>Total</Text>
-            {isEditing ? (
-              <TextInput style={[styles.input, styles.totalInput]} value={editTotal}
-                onChangeText={setEditTotal} keyboardType="decimal-pad" placeholder="0.00" />
-            ) : (
-              <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
-            )}
-          </View>
-
-          {/* Warranty display */}
-          {(invoice.warrantyMonths ?? 0) > 0 && (() => {
-            const expiry = new Date(invoice.date);
-            expiry.setMonth(expiry.getMonth() + (invoice.warrantyMonths ?? 0));
-            const now = new Date();
-            const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / 86400000);
-            const expired = daysLeft < 0;
-            const expiring = !expired && daysLeft <= 30;
+          {/* Warranty display + note */}
+          {!isEditing && (() => {
+            const months = invoice.warrantyMonths ?? 0;
+            let statusText = 'None';
+            let expired = false;
+            let expiring = false;
+            if (months > 0) {
+              const expiry = new Date(invoice.date);
+              expiry.setMonth(expiry.getMonth() + months);
+              const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / 86400000);
+              expired = daysLeft < 0;
+              expiring = !expired && daysLeft <= 30;
+              statusText = expired
+                ? `Expired on ${expiry.toDateString()}`
+                : expiring
+                ? `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} (${expiry.toDateString()})`
+                : `Valid until ${expiry.toDateString()}`;
+            }
             return (
               <View style={[styles.field, expired && styles.fieldExpired, expiring && styles.fieldExpiring]}>
-                <Text style={styles.label}>Warranty</Text>
-                <Text style={[styles.value, expired && styles.valueExpired, expiring && styles.valueExpiring]}>
-                  {expired
-                    ? `Expired on ${expiry.toDateString()}`
-                    : expiring
-                    ? `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} (${expiry.toDateString()})`
-                    : `Valid until ${expiry.toDateString()}`}
-                </Text>
+                <View style={styles.warrantyRow}>
+                  <View style={styles.warrantyContent}>
+                    <Text style={styles.label}>Warranty</Text>
+                    <Text style={[styles.value, expired && styles.valueExpired, expiring && styles.valueExpiring]}>
+                      {statusText}
+                    </Text>
+                    {!!invoice.note && <Text style={styles.noteText}>{invoice.note}</Text>}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.noteIconBtn}
+                    onPress={() => {
+                      setNoteDraft(invoice.note ?? '');
+                      setNoteModalVisible(true);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name={invoice.note ? 'document-text' : 'document-text-outline'}
+                      size={32}
+                      color={invoice.note ? '#2563eb' : '#9ca3af'}
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
             );
           })()}
@@ -417,6 +577,34 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
               ))}
             </View>
           )}
+
+          {/* Item photos (proof of ownership) */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Item Photos (proof of ownership)</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.itemPhotoRow}
+            >
+              {(invoice.itemPhotos ?? []).map((uri) => (
+                <TouchableOpacity
+                  key={uri}
+                  onPress={() => setModalUri(uri)}
+                  onLongPress={() => handleRemoveItemPhoto(uri)}
+                  activeOpacity={0.8}
+                >
+                  <Image source={{ uri }} style={styles.itemPhoto} />
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddItemPhoto}>
+                <Text style={styles.addPhotoPlus}>＋</Text>
+                <Text style={styles.addPhotoText}>Add</Text>
+              </TouchableOpacity>
+            </ScrollView>
+            {(invoice.itemPhotos?.length ?? 0) > 0 && (
+              <Text style={styles.hintText}>Tap to view · long-press to remove</Text>
+            )}
+          </View>
         </View>
       </ScrollView>
 
@@ -432,9 +620,57 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
         )}
       </View>
 
+      {/* Note modal */}
+      <Modal
+        visible={noteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNoteModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.noteModalBg}
+          activeOpacity={1}
+          onPress={() => setNoteModalVisible(false)}
+        >
+          <View style={styles.noteCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.noteTitle}>Note</Text>
+            <TextInput
+              style={styles.noteInput}
+              value={noteDraft}
+              onChangeText={setNoteDraft}
+              placeholder="e.g. extended warranty #, claim details, where the receipt box is..."
+              placeholderTextColor="#9ca3af"
+              multiline
+              autoFocus
+            />
+            <View style={styles.noteBtnRow}>
+              <TouchableOpacity
+                style={styles.noteClearBtn}
+                onPress={() => setNoteModalVisible(false)}
+              >
+                <Text style={styles.noteClearText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.noteClearBtn} onPress={() => setNoteDraft('')}>
+                <Text style={styles.noteClearText}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.noteSaveBtn}
+                onPress={() => {
+                  updateInvoice(invoice.id, { note: noteDraft.trim() });
+                  setInvoice(getInvoiceById(invoice.id));
+                  setNoteModalVisible(false);
+                }}
+              >
+                <Text style={styles.noteSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Photo zoom modal */}
       <Modal
-        visible={photoModalVisible}
+        visible={modalUri !== null}
         transparent
         animationType="fade"
         statusBarTranslucent
@@ -443,7 +679,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
         <View style={styles.modalBg}>
           <View style={styles.modalImageContainer} {...pinchResponder.panHandlers}>
             <Animated.Image
-              source={{ uri: invoice.photoUri }}
+              source={{ uri: modalUri ?? invoice.photoUri }}
               style={[styles.modalImage, { transform: [{ scale }] }]}
               resizeMode="contain"
             />
@@ -490,6 +726,73 @@ const styles = StyleSheet.create({
   valueExpired: { color: '#ef4444' },
   valueExpiring: { color: '#d97706' },
   itemText: { fontSize: 14, color: '#666', marginTop: 4, marginLeft: 8 },
+  serialText: { fontSize: 13, color: '#6b7280', marginTop: 4, fontVariant: ['tabular-nums'] },
+  gstRow: { flexDirection: 'row', gap: 24 },
+  gstCol: { flex: 1 },
+  pairRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  pairRight: { alignItems: 'flex-end' },
+
+  // Warranty note
+  warrantyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  warrantyContent: { flex: 1 },
+  noteIconBtn: {
+    alignSelf: 'center',
+    padding: 4,
+  },
+  noteText: {
+    fontSize: 13,
+    color: '#4b5563',
+    marginTop: 8,
+    lineHeight: 18,
+    backgroundColor: '#f9fafb',
+    borderRadius: 6,
+    padding: 8,
+  },
+  noteModalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  noteCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    gap: 12,
+  },
+  noteTitle: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  noteInput: {
+    minHeight: 100,
+    maxHeight: 220,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+    color: '#111827',
+    textAlignVertical: 'top',
+  },
+  noteBtnRow: { flexDirection: 'row', gap: 10 },
+  noteClearBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+  },
+  noteClearText: { color: '#6b7280', fontWeight: '700', fontSize: 14 },
+  noteSaveBtn: {
+    flex: 2,
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    backgroundColor: '#2563eb',
+  },
+  noteSaveText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   input: {
     marginTop: 6,
     fontSize: 16,
@@ -512,6 +815,28 @@ const styles = StyleSheet.create({
   presetTextActive: { color: '#fff', fontWeight: '600' },
   hintText: { marginTop: 8, fontSize: 11, color: '#9ca3af', fontStyle: 'italic' },
   totalInput: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50' },
+
+  itemPhotoRow: { gap: 8, paddingTop: 8 },
+  itemPhoto: {
+    width: 84,
+    height: 84,
+    borderRadius: 10,
+    backgroundColor: '#e5e7eb',
+  },
+  addPhotoTile: {
+    width: 84,
+    height: 84,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#93c5fd',
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  addPhotoPlus: { fontSize: 24, color: '#2563eb', lineHeight: 28 },
+  addPhotoText: { fontSize: 11, color: '#2563eb', fontWeight: '600' },
 
   controls: { padding: 16, borderTopWidth: 1, borderTopColor: '#eee' },
   button: { paddingVertical: 12, borderRadius: 8, alignItems: 'center' },

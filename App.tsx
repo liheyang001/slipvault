@@ -11,8 +11,6 @@ import CameraScreen from './src/screens/CameraScreen';
 import ReviewScreen from './src/screens/ReviewScreen';
 import InvoiceDetailScreen from './src/screens/InvoiceDetailScreen';
 import SearchScreen from './src/screens/SearchScreen';
-import RoomsScreen from './src/screens/RoomsScreen';
-import InsuranceScreen from './src/screens/InsuranceScreen';
 import PaywallScreen from './src/screens/PaywallScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
@@ -61,7 +59,7 @@ export default function App() {
         <Stack.Screen
           name="Home"
           component={HomeScreen}
-          options={{ title: 'Slipvault' }}
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="Camera"
@@ -82,16 +80,6 @@ export default function App() {
           name="Search"
           component={SearchScreen}
           options={{ title: 'Filter Invoices' }}
-        />
-        <Stack.Screen
-          name="Rooms"
-          component={RoomsScreen}
-          options={{ title: 'Rooms' }}
-        />
-        <Stack.Screen
-          name="Insurance"
-          component={InsuranceScreen}
-          options={{ title: 'Insurance' }}
         />
         <Stack.Screen
           name="Paywall"

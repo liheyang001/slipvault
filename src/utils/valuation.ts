@@ -24,6 +24,8 @@ const DEPRECIATION: Record<string, { rate: number; floor: number }> = {
   clothing: { rate: 0.25, floor: 0.1 },
   furniture: { rate: 0.1, floor: 0.2 },
   appliances: { rate: 0.1, floor: 0.2 },
+  tools: { rate: 0.1, floor: 0.2 },
+  sports: { rate: 0.15, floor: 0.15 },
   jewelry: { rate: 0, floor: 1 }, // jewelry typically holds its value
 };
 const DEFAULT_DEPRECIATION = { rate: 0.1, floor: 0.2 };

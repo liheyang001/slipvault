@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,25 +17,32 @@ import {
   getRoomSummaries,
   searchInvoices,
   updateInvoice,
-  moveRoomInvoices,
+  deleteInvoice,
   getUserRooms,
 } from '../services/database';
-import { exportRoomCSV, exportRoomPDF } from '../services/exporter';
 import { capitalizeRoom, mergeRooms, normalizeRoom } from '../utils/rooms';
 import InvoiceCard from '../components/InvoiceCard';
-import ViewToggle from '../components/ViewToggle';
 
-type Nav = NativeStackNavigationProp<RootStackParamList, 'Rooms'>;
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 type RoomSummary = { room: string; count: number; total: number };
 
-export default function RoomsScreen() {
+interface Props {
+  /** Search query, owned by the fixed header in HomeScreen. */
+  query?: string;
+  /** Reports the currently selected room so the bottom bar can export it. */
+  onRoomChange?: (room: string) => void;
+}
+
+export default function RoomsScreen({ query = '', onRoomChange }: Props) {
   const navigation = useNavigation<Nav>();
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [selectedRoom, setSelectedRoom] = useState('');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [moveModal, setMoveModal] = useState<
-    { mode: 'one'; invoice: Invoice } | { mode: 'all' } | null
+    { mode: 'one'; invoice: Invoice } | { mode: 'selected' } | null
   >(null);
+  const [editing, setEditing] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(
     (preferRoom?: string) => {
@@ -48,9 +55,9 @@ export default function RoomsScreen() {
         ? wanted
         : summaries[0]?.room ?? '';
       setSelectedRoom(room);
-      setInvoices(room ? searchInvoices({ room }) : []);
+      setInvoices(room ? searchInvoices({ room, query: query || undefined }) : []);
     },
-    [selectedRoom]
+    [selectedRoom, query]
   );
 
   useFocusEffect(
@@ -59,9 +66,57 @@ export default function RoomsScreen() {
     }, [refresh])
   );
 
+  useEffect(() => {
+    onRoomChange?.(selectedRoom);
+  }, [selectedRoom, onRoomChange]);
+
   function handleSelectRoom(room: string) {
     setSelectedRoom(room);
-    setInvoices(searchInvoices({ room }));
+    setInvoices(searchInvoices({ room, query: query || undefined }));
+    // Selection belongs to the previous room's list — leave edit mode
+    setEditing(false);
+    setSelected(new Set());
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function handleSelectAll() {
+    setSelected((prev) =>
+      prev.size === invoices.length ? new Set() : new Set(invoices.map((i) => i.id))
+    );
+  }
+
+  function exitEdit() {
+    setEditing(false);
+    setSelected(new Set());
+  }
+
+  function handleDeleteSelected() {
+    const count = selected.size;
+    if (count === 0) return;
+    Alert.alert(
+      'Delete Invoices',
+      `Delete ${count} invoice${count !== 1 ? 's' : ''}? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            selected.forEach((id) => deleteInvoice(id));
+            exitEdit();
+            refresh(selectedRoom);
+          },
+        },
+      ]
+    );
   }
 
   function handleMove(targetRoom: string) {
@@ -72,13 +127,15 @@ export default function RoomsScreen() {
       setMoveModal(null);
       refresh(selectedRoom); // stay in the current room
     } else {
-      const moved = moveRoomInvoices(selectedRoom, target);
+      const ids = [...selected];
+      ids.forEach((id) => updateInvoice(id, { room: target }));
       setMoveModal(null);
-      refresh(target); // follow the contents to their new room
-      if (moved > 0) {
+      exitEdit();
+      refresh(selectedRoom); // stay to see what's left
+      if (ids.length > 0) {
         Alert.alert(
           'Moved',
-          `${moved} invoice${moved !== 1 ? 's' : ''} moved to ${capitalizeRoom(target)}.`
+          `${ids.length} invoice${ids.length !== 1 ? 's' : ''} moved to ${capitalizeRoom(target)}.`
         );
       }
     }
@@ -91,48 +148,11 @@ export default function RoomsScreen() {
       )
     : [];
 
-  function handleExport() {
-    if (invoices.length === 0) return;
-    const label = capitalizeRoom(selectedRoom);
-    Alert.alert(
-      `Export "${label}"`,
-      `Insurance inventory for ${invoices.length} invoice${invoices.length !== 1 ? 's' : ''}`,
-      [
-        {
-          text: 'Export as PDF',
-          onPress: () =>
-            exportRoomPDF(invoices, selectedRoom).catch(() =>
-              Alert.alert('Export failed', 'Could not export PDF. Please try again.')
-            ),
-        },
-        {
-          text: 'Export as CSV',
-          onPress: () =>
-            exportRoomCSV(invoices, selectedRoom).catch(() =>
-              Alert.alert('Export failed', 'Could not export CSV. Please try again.')
-            ),
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  }
-
   const roomTotal = invoices.reduce((sum, inv) => sum + inv.total, 0);
-
-  const toggle = (
-    <ViewToggle
-      active="rooms"
-      onSelect={(v) => {
-        if (v === 'invoices') navigation.navigate('Home');
-        if (v === 'insurance') navigation.navigate('Insurance');
-      }}
-    />
-  );
 
   if (rooms.length === 0) {
     return (
       <View style={styles.container}>
-        {toggle}
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🏠</Text>
           <Text style={styles.emptyTitle}>No rooms yet</Text>
@@ -147,8 +167,6 @@ export default function RoomsScreen() {
 
   return (
     <View style={styles.container}>
-      {toggle}
-
       {/* Room chip bar */}
       <ScrollView
         horizontal
@@ -171,41 +189,108 @@ export default function RoomsScreen() {
 
       {/* Summary + actions */}
       <View style={styles.summaryRow}>
-        <View style={styles.summaryLeft}>
-          <Text style={styles.summaryRoom}>{capitalizeRoom(selectedRoom)}</Text>
-          <Text style={styles.summarySub}>
-            {invoices.length} invoice{invoices.length !== 1 ? 's' : ''} · ${roomTotal.toFixed(2)}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.moveAllBtn, invoices.length === 0 && styles.btnDisabled]}
-          onPress={() => setMoveModal({ mode: 'all' })}
-          disabled={invoices.length === 0}
-        >
-          <Text style={styles.moveAllBtnText}>⇄ Move All</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.exportBtn, invoices.length === 0 && styles.btnDisabled]}
-          onPress={handleExport}
-          disabled={invoices.length === 0}
-        >
-          <Text style={styles.exportBtnText}>Export</Text>
-        </TouchableOpacity>
+        {!editing ? (
+          <>
+            <View style={styles.summaryLeft}>
+              <Text style={styles.summaryRoom}>{capitalizeRoom(selectedRoom)}</Text>
+              <Text style={styles.summarySub}>
+                {invoices.length} invoice{invoices.length !== 1 ? 's' : ''} · $
+                {roomTotal.toFixed(2)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.editBtn, invoices.length === 0 && styles.btnDisabled]}
+              onPress={() => setEditing(true)}
+              disabled={invoices.length === 0}
+            >
+              <Text style={styles.editBtnText}>Edit</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <View style={styles.summaryLeft}>
+              <Text style={styles.summaryRoom}>{selected.size} selected</Text>
+            </View>
+            <TouchableOpacity style={styles.editBtn} onPress={exitEdit}>
+              <Text style={styles.editBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
-      <Text style={styles.moveHint}>Long-press an invoice to move it to another room</Text>
+      {/* Edit mode actions: Select All · Move to · Delete in one row */}
+      {editing && (
+        <View style={styles.editActions}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.selectAllBtn]}
+            onPress={handleSelectAll}
+          >
+            <Text style={styles.selectAllBtnText}>
+              {selected.size === invoices.length ? 'Deselect All' : 'Select All'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.moveBtn, selected.size === 0 && styles.btnDisabled]}
+            onPress={() => setMoveModal({ mode: 'selected' })}
+            disabled={selected.size === 0}
+          >
+            <Text style={styles.actionBtnText}>⇄ Move to…</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.deleteBtn, selected.size === 0 && styles.btnDisabled]}
+            onPress={handleDeleteSelected}
+            disabled={selected.size === 0}
+          >
+            <Text style={styles.actionBtnText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!editing && (
+        <Text style={styles.moveHint}>Long-press an invoice to move it to another room</Text>
+      )}
 
       <FlatList
         data={invoices}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <InvoiceCard
-            invoice={item}
-            onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: item.id })}
-            onLongPress={() => setMoveModal({ mode: 'one', invoice: item })}
-          />
-        )}
+        extraData={[editing, selected]}
+        renderItem={({ item }) => {
+          if (!editing) {
+            return (
+              <InvoiceCard
+                invoice={item}
+                onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: item.id })}
+                onLongPress={() => setMoveModal({ mode: 'one', invoice: item })}
+              />
+            );
+          }
+          const isSelected = selected.has(item.id);
+          return (
+            // Whole row is one tap target; the card itself is non-interactive here
+            <TouchableOpacity
+              style={styles.selectableRow}
+              onPress={() => toggleSelect(item.id)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkCircle, isSelected && styles.checkCircleOn]}>
+                {isSelected && <Text style={styles.checkMark}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }} pointerEvents="none">
+                <InvoiceCard invoice={item} onPress={() => {}} />
+              </View>
+            </TouchableOpacity>
+          );
+        }}
         contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          query ? (
+            <View style={styles.noMatch}>
+              <Text style={styles.noMatchText}>
+                No matches for "{query}" in {capitalizeRoom(selectedRoom)}
+              </Text>
+            </View>
+          ) : null
+        }
       />
 
       {/* Destination room picker */}
@@ -222,8 +307,8 @@ export default function RoomsScreen() {
         >
           <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalTitle}>
-              {moveModal?.mode === 'all'
-                ? `Move everything in ${capitalizeRoom(selectedRoom)} to…`
+              {moveModal?.mode === 'selected'
+                ? `Move ${selected.size} invoice${selected.size !== 1 ? 's' : ''} to…`
                 : `Move "${moveModal?.mode === 'one' ? moveModal.invoice.vendor || 'invoice' : ''}" to…`}
             </Text>
             <View style={styles.modalChips}>
@@ -245,6 +330,9 @@ export default function RoomsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
+
+  noMatch: { alignItems: 'center', paddingTop: 40 },
+  noMatchText: { fontSize: 13, color: '#94a3b8' },
 
   roomBar: {
     backgroundColor: '#fff',
@@ -268,24 +356,61 @@ const styles = StyleSheet.create({
   summaryLeft: { flex: 1 },
   summaryRoom: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
   summarySub: { fontSize: 13, color: '#64748b', marginTop: 2 },
-  moveAllBtn: {
+  editBtn: {
     backgroundColor: '#eef2f6',
     paddingHorizontal: 13,
-    paddingVertical: 11,
-    borderRadius: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  moveAllBtnText: { color: '#334155', fontWeight: '700', fontSize: 13 },
-  exportBtn: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 12,
-  },
+  editBtnText: { color: '#334155', fontWeight: '700', fontSize: 13 },
   btnDisabled: { opacity: 0.45 },
-  exportBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // Edit mode
+  editActions: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectAllBtn: {
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#2563eb',
+  },
+  selectAllBtnText: { color: '#2563eb', fontWeight: '700', fontSize: 13 },
+  moveBtn: { backgroundColor: '#2563eb' },
+  deleteBtn: { backgroundColor: '#ef4444' },
+  actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  selectableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkCircleOn: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  checkMark: { color: '#fff', fontSize: 13, fontWeight: '800', lineHeight: 16 },
 
   moveHint: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#94a3b8',
     paddingHorizontal: 16,
     paddingBottom: 6,

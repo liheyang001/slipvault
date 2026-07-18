@@ -11,14 +11,20 @@ interface Props {
 
 // Category config: accent color + emoji icon
 const CATEGORY_CONFIG: Record<string, { color: string; bg: string; icon: string }> = {
-  groceries:   { color: '#16a34a', bg: '#dcfce7', icon: '🛒' },
   electronics: { color: '#2563eb', bg: '#dbeafe', icon: '💻' },
-  restaurant:  { color: '#d97706', bg: '#fef3c7', icon: '🍽️' },
-  utilities:   { color: '#7c3aed', bg: '#ede9fe', icon: '⚡' },
-  healthcare:  { color: '#dc2626', bg: '#fee2e2', icon: '🏥' },
+  furniture:   { color: '#b45309', bg: '#fef3c7', icon: '🛋️' },
+  appliances:  { color: '#0d9488', bg: '#ccfbf1', icon: '🔌' },
+  jewelry:     { color: '#a21caf', bg: '#fae8ff', icon: '💍' },
   clothing:    { color: '#db2777', bg: '#fce7f3', icon: '👕' },
+  tools:       { color: '#57534e', bg: '#f5f5f4', icon: '🔧' },
+  sports:      { color: '#059669', bg: '#d1fae5', icon: '⚽' },
+  healthcare:  { color: '#dc2626', bg: '#fee2e2', icon: '🏥' },
   transport:   { color: '#0891b2', bg: '#cffafe', icon: '🚗' },
   other:       { color: '#6b7280', bg: '#f3f4f6', icon: '📄' },
+  // Legacy categories (still on old invoices; excluded from contents value)
+  groceries:   { color: '#16a34a', bg: '#dcfce7', icon: '🛒' },
+  restaurant:  { color: '#d97706', bg: '#fef3c7', icon: '🍽️' },
+  utilities:   { color: '#7c3aed', bg: '#ede9fe', icon: '⚡' },
 };
 
 const DEFAULT_CONFIG = { color: '#6b7280', bg: '#f3f4f6', icon: '📄' };
@@ -47,9 +53,6 @@ export default function InvoiceCard({ invoice, onPress, onDelete, onLongPress }:
       onLongPress={onLongPress}
       activeOpacity={0.75}
     >
-      {/* Left accent stripe */}
-      <View style={[styles.stripe, { backgroundColor: cfg.color }]} />
-
       {/* Photo thumbnail */}
       <Image
         source={{ uri: invoice.photoUri }}
@@ -95,6 +98,9 @@ export default function InvoiceCard({ invoice, onPress, onDelete, onLongPress }:
           <Text style={styles.deleteIcon}>×</Text>
         </TouchableOpacity>
       )}
+
+      {/* Right accent stripe */}
+      <View style={[styles.stripe, { backgroundColor: cfg.color }]} />
     </TouchableOpacity>
   );
 }
@@ -114,7 +120,7 @@ const styles = StyleSheet.create({
     minHeight: 80,
   },
   stripe: {
-    width: 4,
+    width: 6,
     alignSelf: 'stretch',
   },
   thumbnail: {

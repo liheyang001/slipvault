@@ -25,7 +25,7 @@ Return JSON with this exact structure (no markdown, no explanation, just JSON):
   "subtotal": 0.00,
   "tax": 0.00,
   "total": 0.00,
-  "category": "one of: groceries|electronics|restaurant|utilities|healthcare|clothing|transport|other"
+  "category": "one of: electronics|furniture|appliances|jewelry|clothing|tools|sports|transport|healthcare|groceries|restaurant|utilities|other"
 }
 
 Rules:

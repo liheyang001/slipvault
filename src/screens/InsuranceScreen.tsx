@@ -1,11 +1,10 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -28,13 +27,25 @@ import {
   ValuedItem,
 } from '../utils/valuation';
 import { capitalizeRoom } from '../utils/rooms';
-import ViewToggle from '../components/ViewToggle';
 
-type Nav = NativeStackNavigationProp<RootStackParamList, 'Insurance'>;
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 const THRESHOLD_OPTIONS = [250, 500, 1000, 2000];
 
-export default function InsuranceScreen() {
+export interface ValuationState {
+  enabled: boolean;
+  running: boolean;
+  trigger: () => void;
+}
+
+interface Props {
+  /** Search query, owned by the fixed header in HomeScreen. */
+  query?: string;
+  /** Reports AI-valuation availability so the bottom bar can host the button. */
+  onValuationState?: (state: ValuationState) => void;
+}
+
+export default function InsuranceScreen({ query = '', onValuationState }: Props) {
   const navigation = useNavigation<Nav>();
   const [totals, setTotals] = useState<ContentsTotal>({ count: 0, purchase: 0, current: 0 });
   const [roomValues, setRoomValues] = useState<RoomValue[]>([]);
@@ -98,6 +109,15 @@ export default function InsuranceScreen() {
     }
   }
 
+  useEffect(() => {
+    onValuationState?.({
+      enabled: highValue.length > 0 && !valuating,
+      running: valuating,
+      trigger: handleAIValuate,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highValue, valuating]);
+
   const header = (
     <View>
       {/* Contents value card */}
@@ -154,41 +174,20 @@ export default function InsuranceScreen() {
           Single items at or above the threshold — these may need to be listed (specified)
           separately on your policy.
         </Text>
-        {highValue.length > 0 && (
-          <TouchableOpacity
-            style={[styles.aiBtn, valuating && styles.aiBtnDisabled]}
-            onPress={handleAIValuate}
-            disabled={valuating}
-            activeOpacity={0.85}
-          >
-            {valuating ? (
-              <>
-                <ActivityIndicator color="#fff" size="small" />
-                <Text style={styles.aiBtnText}>Estimating {Math.min(highValue.length, 40)} items…</Text>
-              </>
-            ) : (
-              <Text style={styles.aiBtnText}>
-                ✨ AI Valuation ({Math.min(highValue.length, 40)} items)
-              </Text>
-            )}
-          </TouchableOpacity>
-        )}
       </View>
     </View>
   );
 
+  const shownItems = query
+    ? highValue.filter((it) =>
+        `${it.name} ${it.vendor}`.toLowerCase().includes(query.toLowerCase())
+      )
+    : highValue;
+
   return (
     <View style={styles.container}>
-      <ViewToggle
-        active="insurance"
-        onSelect={(v) => {
-          if (v === 'invoices') navigation.navigate('Home');
-          if (v === 'rooms') navigation.navigate('Rooms');
-        }}
-      />
-
       <FlatList
-        data={highValue}
+        data={shownItems}
         keyExtractor={(item, i) => `${item.invoiceId}_${i}`}
         ListHeaderComponent={header}
         renderItem={({ item }) => {
@@ -227,7 +226,11 @@ export default function InsuranceScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>🛡️</Text>
             <Text style={styles.emptyTitle}>
-              {totals.count === 0 ? 'No contents yet' : `No items over $${threshold}`}
+              {totals.count === 0
+                ? 'No contents yet'
+                : query && highValue.length > 0
+                ? `No matches for "${query}"`
+                : `No items over $${threshold}`}
             </Text>
             <Text style={styles.emptySubtitle}>
               {totals.count === 0
@@ -289,18 +292,6 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: '#475569', fontWeight: '600' },
   chipTextActive: { color: '#fff', fontWeight: '700' },
   hvHint: { fontSize: 11, color: '#94a3b8', lineHeight: 15 },
-  aiBtn: {
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: '#7c3aed',
-    paddingVertical: 11,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  aiBtnDisabled: { backgroundColor: '#c4b5fd' },
-  aiBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
   itemRow: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useLayoutEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,10 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
-  ScrollView,
+  Modal,
 } from 'react-native';
+import PagerView from 'react-native-pager-view';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,10 +19,10 @@ import { RootStackParamList } from '../types/navigation';
 import { Invoice, SearchFilters } from '../types/invoice';
 import {
   searchInvoices,
-  deleteInvoice,
   getPendingInvoices,
   updateInvoice,
-  getUsedCategories,
+  getCategoryUsage,
+  bumpCategoryTap,
   isProUser,
   getInvoiceCount,
   FREE_INVOICE_LIMIT,
@@ -28,9 +30,15 @@ import {
 import { processInvoiceImage } from '../services/imageProcessor';
 import { extractInvoiceData } from '../services/claude';
 import InvoiceCard from '../components/InvoiceCard';
-import ViewToggle from '../components/ViewToggle';
+import ViewToggle, { ToggleView } from '../components/ViewToggle';
+import RoomsScreen from './RoomsScreen';
+import InsuranceScreen, { ValuationState } from './InsuranceScreen';
 import { capitalize } from '../utils/categories';
-import { exportCSV, exportPDF } from '../services/exporter';
+import { capitalizeRoom } from '../utils/rooms';
+import { exportCSV, exportPDF, exportRoomCSV, exportRoomPDF } from '../services/exporter';
+
+const VIEW_ORDER: Record<ToggleView, number> = { invoices: 0, rooms: 1, insurance: 2 };
+const VIEWS: ToggleView[] = ['invoices', 'rooms', 'insurance'];
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -40,33 +48,56 @@ export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<SearchFilters>({});
   const [selectedCategory, setSelectedCategory] = useState('');
-  const [categoryList, setCategoryList] = useState<string[]>([]);
+  const [categoryUsage, setCategoryUsage] = useState<
+    { category: string; count: number; taps: number }[]
+  >([]);
+  const [catModalVisible, setCatModalVisible] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [quota, setQuota] = useState<{ pro: boolean; count: number }>({ pro: true, count: 0 });
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
-            <Ionicons name="settings-outline" size={22} color="#64748b" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleExport()}
-            style={{ paddingHorizontal: 4 }}
-            disabled={invoices.length === 0}
-          >
-            <Text style={[styles.exportBtn, invoices.length === 0 && styles.exportBtnDisabled]}>
-              Export
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ),
-    });
-  }, [invoices]);
+  // View switching: fixed header, native pager below (both pages visible while sliding)
+  const [view, setView] = useState<ToggleView>('invoices');
+  const [currentRoom, setCurrentRoom] = useState('');
+  const [valuation, setValuation] = useState<ValuationState | null>(null);
+  const pagerRef = useRef<PagerView>(null);
+
+  function switchView(next: ToggleView) {
+    setView(next); // instant toggle highlight
+    pagerRef.current?.setPage(VIEW_ORDER[next]); // native animated slide
+  }
 
   function handleExport() {
+    // Rooms view: export the currently selected room as an insurance inventory
+    if (view === 'rooms') {
+      if (!currentRoom) return;
+      const roomInvoices = searchInvoices({ room: currentRoom });
+      if (roomInvoices.length === 0) return;
+      const label = capitalizeRoom(currentRoom);
+      Alert.alert(
+        `Export "${label}"`,
+        `Insurance inventory for ${roomInvoices.length} invoice${roomInvoices.length !== 1 ? 's' : ''}`,
+        [
+          {
+            text: 'Export as PDF',
+            onPress: () =>
+              exportRoomPDF(roomInvoices, currentRoom).catch(() =>
+                Alert.alert('Export failed', 'Could not export PDF. Please try again.')
+              ),
+          },
+          {
+            text: 'Export as CSV',
+            onPress: () =>
+              exportRoomCSV(roomInvoices, currentRoom).catch(() =>
+                Alert.alert('Export failed', 'Could not export CSV. Please try again.')
+              ),
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     if (invoices.length === 0) return;
     Alert.alert(
       'Export Invoices',
@@ -93,8 +124,8 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      // Show only categories that actually exist in invoices
-      setCategoryList(getUsedCategories());
+      // Categories in use, most-used first (personalized quick filters)
+      setCategoryUsage(getCategoryUsage());
       setQuota({ pro: isProUser(), count: getInvoiceCount() });
 
       const filters: SearchFilters = {
@@ -159,34 +190,16 @@ export default function HomeScreen() {
     setInvoices(searchInvoices(filters));
   }
 
-  function handleCategorySelect(cat: string) {
-    const next = cat === selectedCategory ? '' : cat;
-    setSelectedCategory(next);
+  function pickCategory(cat: string) {
+    if (cat) bumpCategoryTap(cat); // learn the user's habits (deselect doesn't count)
+    setSelectedCategory(cat);
     const filters: SearchFilters = {
       ...activeFilters,
       query: query || undefined,
-      category: next || undefined,
+      category: cat || undefined,
     };
     setInvoices(searchInvoices(filters));
-  }
-
-  function handleDelete(id: string) {
-    Alert.alert('Delete Invoice', 'Are you sure you want to delete this invoice?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          deleteInvoice(id);
-          const filters: SearchFilters = {
-            ...activeFilters,
-            query: query || undefined,
-            category: selectedCategory || undefined,
-          };
-          setInvoices(searchInvoices(filters));
-        },
-      },
-    ]);
+    setCatModalVisible(false);
   }
 
   const totalAmount = invoices.reduce((sum, inv) => sum + inv.total, 0);
@@ -194,8 +207,11 @@ export default function HomeScreen() {
     (k) => activeFilters[k as keyof SearchFilters] !== undefined
   );
 
+  const canExport = view === 'rooms' ? currentRoom !== '' : invoices.length > 0;
+  const exportLabel = view === 'rooms' ? 'Export Room' : 'Export';
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Search + filter button */}
       <View style={styles.searchRow}>
         <TextInput
@@ -215,34 +231,64 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Invoices / Rooms toggle */}
-      <ViewToggle
-        active="invoices"
-        onSelect={(v) => {
-          if (v === 'rooms') navigation.navigate('Rooms');
-          if (v === 'insurance') navigation.navigate('Insurance');
-        }}
-      />
+      {/* Fixed view toggle — content below slides, header stays put */}
+      <ViewToggle active={view} onSelect={switchView} />
 
-      {/* Category chip bar */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoryBar}
-        contentContainerStyle={styles.categoryContent}
+      <PagerView
+        ref={pagerRef}
+        style={{ flex: 1 }}
+        initialPage={0}
+        onPageSelected={(e) => setView(VIEWS[e.nativeEvent.position])}
       >
-        {categoryList.map((cat) => (
-          <TouchableOpacity
-            key={cat}
-            style={[styles.chip, selectedCategory === cat && styles.chipActive]}
-            onPress={() => handleCategorySelect(cat)}
-          >
-            <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>
-              {capitalize(cat)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+        <View key="invoices" style={{ flex: 1, backgroundColor: '#f8fafc' }} collapsable={false}>
+      {/* Category quick filters: user's most-used + dropdown for the rest */}
+      {categoryUsage.length > 0 && (() => {
+        const top = categoryUsage.slice(0, 2).map((u) => u.category);
+        const displayCats =
+          selectedCategory && !top.includes(selectedCategory)
+            ? [...top.slice(0, 1), selectedCategory]
+            : top;
+        return (
+          <View style={styles.catRow}>
+            <TouchableOpacity
+              style={[styles.catChip, !selectedCategory && styles.catChipActive]}
+              onPress={() => pickCategory('')}
+            >
+              <Text
+                style={[styles.catChipText, !selectedCategory && styles.catChipTextActive]}
+              >
+                All
+              </Text>
+            </TouchableOpacity>
+            {displayCats.map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.catChip, selectedCategory === cat && styles.catChipActive]}
+                onPress={() => pickCategory(selectedCategory === cat ? '' : cat)}
+              >
+                <Text
+                  style={[
+                    styles.catChipText,
+                    selectedCategory === cat && styles.catChipTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {capitalize(cat)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            {categoryUsage.length > displayCats.length && (
+              <TouchableOpacity
+                style={styles.catMore}
+                onPress={() => setCatModalVisible(true)}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+              >
+                <Text style={styles.catMoreText}>Show All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+      })()}
 
       {/* Free quota banner (shown when close to the cap) */}
       {!quota.pro && quota.count >= FREE_INVOICE_LIMIT - 5 && (
@@ -300,7 +346,6 @@ export default function HomeScreen() {
           <InvoiceCard
             invoice={item}
             onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: item.id })}
-            onDelete={() => handleDelete(item.id)}
           />
         )}
         contentContainerStyle={invoices.length === 0 ? styles.emptyContainer : styles.list}
@@ -327,19 +372,156 @@ export default function HomeScreen() {
         }
       />
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => navigation.navigate('Camera')}
-        activeOpacity={0.85}
+        </View>
+
+        <View key="rooms" style={{ flex: 1 }} collapsable={false}>
+          <RoomsScreen query={query} onRoomChange={setCurrentRoom} />
+        </View>
+
+        <View key="insurance" style={{ flex: 1 }} collapsable={false}>
+          <InsuranceScreen query={query} onValuationState={setValuation} />
+        </View>
+      </PagerView>
+
+      {/* Bottom action bar: Settings + Export */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={styles.barBtn}
+          onPress={() => navigation.navigate('Settings')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="settings-outline" size={20} color="#475569" />
+          <Text style={styles.barBtnText}>Settings</Text>
+        </TouchableOpacity>
+        <View style={styles.barDivider} />
+        {view === 'insurance' ? (
+          <TouchableOpacity
+            style={styles.barBtn}
+            onPress={() => valuation?.trigger()}
+            disabled={!valuation?.enabled}
+            activeOpacity={0.7}
+          >
+            {valuation?.running ? (
+              <ActivityIndicator size="small" color="#7c3aed" />
+            ) : (
+              <Ionicons
+                name="sparkles-outline"
+                size={20}
+                color={valuation?.enabled ? '#7c3aed' : '#cbd5e1'}
+              />
+            )}
+            <Text
+              style={[
+                styles.barBtnText,
+                { color: valuation?.running || valuation?.enabled ? '#7c3aed' : '#cbd5e1' },
+              ]}
+            >
+              {valuation?.running ? 'Estimating…' : 'AI Valuation'}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.barBtn}
+            onPress={handleExport}
+            disabled={!canExport}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="share-outline" size={20} color={canExport ? '#2563eb' : '#cbd5e1'} />
+            <Text style={[styles.barBtnText, { color: canExport ? '#2563eb' : '#cbd5e1' }]}>
+              {exportLabel}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Category picker modal */}
+      <Modal
+        visible={catModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCatModalVisible(false)}
       >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity
+          style={styles.modalBg}
+          activeOpacity={1}
+          onPress={() => setCatModalVisible(false)}
+        >
+          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>Filter by category</Text>
+            <View style={styles.modalChips}>
+              <TouchableOpacity
+                style={[styles.modalChip, !selectedCategory && styles.modalChipActive]}
+                onPress={() => pickCategory('')}
+              >
+                <Text
+                  style={[styles.modalChipText, !selectedCategory && styles.modalChipTextActive]}
+                >
+                  All
+                </Text>
+              </TouchableOpacity>
+              {categoryUsage.map(({ category: cat, count }) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[styles.modalChip, selectedCategory === cat && styles.modalChipActive]}
+                  onPress={() => pickCategory(cat)}
+                >
+                  <Text
+                    style={[
+                      styles.modalChipText,
+                      selectedCategory === cat && styles.modalChipTextActive,
+                    ]}
+                  >
+                    {capitalize(cat)} ({count})
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Scan FAB — floats above the pager on Invoices and Rooms views */}
+      {view !== 'insurance' && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() =>
+            navigation.navigate(
+              'Camera',
+              // Scanning from a room? New invoices default to that room.
+              view === 'rooms' && currentRoom ? { defaultRoom: currentRoom } : undefined
+            )
+          }
+          activeOpacity={0.85}
+        >
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#fff' },
+
+  // Bottom action bar
+  bottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingVertical: 6,
+  },
+  barBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 8,
+  },
+  barBtnText: { fontSize: 14, fontWeight: '600', color: '#475569' },
+  barDivider: { width: 1, height: 24, backgroundColor: '#f1f5f9' },
 
   // Search bar
   searchRow: {
@@ -373,28 +555,62 @@ const styles = StyleSheet.create({
   filterButtonActive: { backgroundColor: '#d97706' },
   filterButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
-  // Category chips
-  categoryBar: {
+  // Category filter (compact selector + modal)
+  catRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
-    maxHeight: 44,
   },
-  categoryContent: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    gap: 8,
-    flexDirection: 'row',
-  },
-  chip: {
-    paddingHorizontal: 14,
+  catChip: {
+    flexShrink: 1,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: 6,
     backgroundColor: '#f1f5f9',
   },
-  chipActive: { backgroundColor: '#2563eb' },
-  chipText: { fontSize: 13, color: '#475569', fontWeight: '500' },
-  chipTextActive: { color: '#fff', fontWeight: '700' },
+  catChipActive: { backgroundColor: '#2563eb' },
+  catChipText: { fontSize: 13, color: '#475569', fontWeight: '600' },
+  catChipTextActive: { color: '#fff' },
+  catMore: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 'auto',
+  },
+  catMoreText: { fontSize: 13, color: '#2563eb', fontWeight: '700' },
+
+  // Category modal
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    gap: 14,
+  },
+  modalTitle: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  modalChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  modalChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 6,
+    backgroundColor: '#eef2f6',
+  },
+  modalChipActive: { backgroundColor: '#2563eb' },
+  modalChipText: { fontSize: 14, color: '#0f172a', fontWeight: '600' },
+  modalChipTextActive: { color: '#fff' },
 
   // Quota banner
   quotaBanner: {
@@ -468,11 +684,11 @@ const styles = StyleSheet.create({
   // FAB
   fab: {
     position: 'absolute',
-    bottom: 36,
+    bottom: 84,
     right: 24,
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 53,
+    height: 53,
+    borderRadius: 26.5,
     backgroundColor: '#2563eb',
     justifyContent: 'center',
     alignItems: 'center',
@@ -482,8 +698,5 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 10,
   },
-  fabText: { color: '#fff', fontSize: 30, lineHeight: 34, fontWeight: '300' },
-
-  exportBtn: { color: '#2563eb', fontSize: 16, fontWeight: '600' },
-  exportBtnDisabled: { color: '#cbd5e1' },
+  fabText: { color: '#fff', fontSize: 26, lineHeight: 29, fontWeight: '300' },
 });

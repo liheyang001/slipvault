@@ -7,6 +7,7 @@ import {
   Switch,
   Linking,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -21,6 +22,7 @@ import {
   FREE_INVOICE_LIMIT,
 } from '../services/database';
 import { scheduleMonthlyReminder, cancelScheduledNotification } from '../services/notifications';
+import { createBackup, restoreBackup } from '../services/backup';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
 
@@ -31,6 +33,7 @@ export default function SettingsScreen() {
   const [monthlyEnabled, setMonthlyEnabled] = useState(false);
   const [pro, setPro] = useState(false);
   const [invoiceCount, setInvoiceCount] = useState(0);
+  const [busy, setBusy] = useState<'backup' | 'restore' | null>(null);
 
   useEffect(() => {
     setMonthlyEnabled(getSetting('monthlyNotif', 'false') === 'true');
@@ -60,6 +63,51 @@ export default function SettingsScreen() {
 
       Alert.alert('Monthly Summary On', "You'll receive a summary on the 1st of each month.");
     }
+  }
+
+  async function handleBackup() {
+    if (busy) return;
+    setBusy('backup');
+    try {
+      const count = await createBackup();
+      // Share sheet handles the rest; nothing to confirm here.
+      if (count === 0) Alert.alert('Backup created', 'Note: you have no invoices yet.');
+    } catch {
+      Alert.alert('Backup failed', 'Could not create the backup. Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function handleRestore() {
+    if (busy) return;
+    Alert.alert(
+      'Restore from backup',
+      'Pick a Slipvault backup zip. Invoices with the same ID will be overwritten; everything else is merged.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Choose file',
+          onPress: async () => {
+            setBusy('restore');
+            try {
+              const result = await restoreBackup();
+              if (result) {
+                setInvoiceCount(getInvoiceCount());
+                Alert.alert(
+                  'Restore complete',
+                  `${result.invoices} invoice${result.invoices !== 1 ? 's' : ''} restored.`
+                );
+              }
+            } catch (e: any) {
+              Alert.alert('Restore failed', e?.message ?? 'Could not read that backup file.');
+            } finally {
+              setBusy(null);
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function handleFeedback() {
@@ -95,6 +143,35 @@ export default function SettingsScreen() {
             </Text>
           </View>
           {!pro && <Text style={styles.chevron}>›</Text>}
+        </TouchableOpacity>
+      </View>
+
+      {/* Backup */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Backup</Text>
+        <TouchableOpacity style={styles.row} onPress={handleBackup} disabled={busy !== null}>
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>Back up now</Text>
+            <Text style={styles.rowSub}>
+              Bundle all invoices & photos into a zip — share it to Google Drive, email, anywhere
+            </Text>
+          </View>
+          {busy === 'backup' ? (
+            <ActivityIndicator size="small" color="#2563eb" />
+          ) : (
+            <Text style={styles.chevron}>›</Text>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.row} onPress={handleRestore} disabled={busy !== null}>
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>Restore from backup</Text>
+            <Text style={styles.rowSub}>Import a previously exported backup zip</Text>
+          </View>
+          {busy === 'restore' ? (
+            <ActivityIndicator size="small" color="#2563eb" />
+          ) : (
+            <Text style={styles.chevron}>›</Text>
+          )}
         </TouchableOpacity>
       </View>
 

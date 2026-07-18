@@ -2,12 +2,10 @@ import { SearchFilters } from './invoice';
 
 export type RootStackParamList = {
   Home: { filters?: SearchFilters } | undefined;
-  Camera: undefined;
-  Review: { photoUri: string; queue?: string[] };
+  Camera: { defaultRoom?: string } | undefined;
+  Review: { photoUri: string; queue?: string[]; defaultRoom?: string };
   InvoiceDetail: { invoiceId: string };
   Search: { filters?: SearchFilters } | undefined;
-  Rooms: undefined;
-  Insurance: undefined;
   Paywall: undefined;
   Settings: undefined;
 };

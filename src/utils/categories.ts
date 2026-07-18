@@ -1,11 +1,14 @@
+// Contents-insurance oriented: durable belongings you'd claim, not consumables.
 export const DEFAULT_CATEGORIES = [
-  'groceries',
-  'restaurant',
   'electronics',
+  'furniture',
+  'appliances',
+  'jewelry',
+  'clothing',
+  'tools',
+  'sports',
   'transport',
   'healthcare',
-  'clothing',
-  'utilities',
   'other',
 ];
 

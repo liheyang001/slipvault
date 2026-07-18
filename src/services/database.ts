@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Invoice, NewInvoice, SearchFilters } from '../types/invoice';
 import { generateId } from '../utils/id';
 import { DEFAULT_CATEGORIES } from '../utils/categories';
@@ -20,10 +21,15 @@ export function initDatabase(): void {
       total REAL DEFAULT 0,
       category TEXT DEFAULT '',
       room TEXT DEFAULT '',
+      itemPhotos TEXT DEFAULT '[]',
+      brand TEXT DEFAULT '',
+      model TEXT DEFAULT '',
+      serialNumber TEXT DEFAULT '',
       tags TEXT DEFAULT '[]',
       status TEXT DEFAULT 'done',
       warrantyMonths INTEGER DEFAULT 0,
       warrantyNotifId TEXT DEFAULT '',
+      note TEXT DEFAULT '',
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -35,6 +41,10 @@ export function initDatabase(): void {
     );
     CREATE TABLE IF NOT EXISTS user_rooms (
       name TEXT PRIMARY KEY
+    );
+    CREATE TABLE IF NOT EXISTS category_taps (
+      name TEXT PRIMARY KEY,
+      taps INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS ai_valuations (
       invoiceId TEXT NOT NULL,
@@ -55,6 +65,11 @@ export function initDatabase(): void {
     `ALTER TABLE invoices ADD COLUMN warrantyMonths INTEGER DEFAULT 0`,
     `ALTER TABLE invoices ADD COLUMN warrantyNotifId TEXT DEFAULT ''`,
     `ALTER TABLE invoices ADD COLUMN room TEXT DEFAULT ''`,
+    `ALTER TABLE invoices ADD COLUMN itemPhotos TEXT DEFAULT '[]'`,
+    `ALTER TABLE invoices ADD COLUMN brand TEXT DEFAULT ''`,
+    `ALTER TABLE invoices ADD COLUMN model TEXT DEFAULT ''`,
+    `ALTER TABLE invoices ADD COLUMN serialNumber TEXT DEFAULT ''`,
+    `ALTER TABLE invoices ADD COLUMN note TEXT DEFAULT ''`,
   ];
   for (const sql of migrations) {
     try { db.execSync(sql); } catch { /* column already exists */ }
@@ -137,8 +152,8 @@ export function insertInvoice(data: NewInvoice): Invoice {
   };
 
   db.runSync(
-    `INSERT INTO invoices (id, photoUri, ocrText, vendor, date, items, subtotal, tax, total, category, room, tags, status, warrantyMonths, warrantyNotifId, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO invoices (id, photoUri, ocrText, vendor, date, items, subtotal, tax, total, category, room, itemPhotos, brand, model, serialNumber, note, tags, status, warrantyMonths, warrantyNotifId, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       invoice.id,
       invoice.photoUri,
@@ -151,6 +166,11 @@ export function insertInvoice(data: NewInvoice): Invoice {
       invoice.total,
       invoice.category,
       invoice.room ?? '',
+      JSON.stringify(invoice.itemPhotos ?? []),
+      invoice.brand ?? '',
+      invoice.model ?? '',
+      invoice.serialNumber ?? '',
+      invoice.note ?? '',
       JSON.stringify(invoice.tags),
       invoice.status ?? 'done',
       invoice.warrantyMonths ?? 0,
@@ -170,7 +190,7 @@ export function updateInvoice(id: string, data: Partial<NewInvoice>): void {
     .join(', ');
 
   const values: (string | number)[] = Object.entries(data).map(([k, v]) => {
-    if (k === 'items' || k === 'tags') return JSON.stringify(v);
+    if (k === 'items' || k === 'tags' || k === 'itemPhotos') return JSON.stringify(v);
     if (typeof v === 'number') return v;
     return String(v ?? '');
   });
@@ -182,8 +202,15 @@ export function updateInvoice(id: string, data: Partial<NewInvoice>): void {
 }
 
 export function deleteInvoice(id: string): void {
+  const invoice = getInvoiceById(id);
   db.runSync('DELETE FROM invoices WHERE id = ?', [id]);
   db.runSync('DELETE FROM ai_valuations WHERE invoiceId = ?', [id]);
+  // Clean up photo files (fire-and-forget)
+  if (invoice) {
+    for (const uri of [invoice.photoUri, ...(invoice.itemPhotos ?? [])]) {
+      if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+    }
+  }
 }
 
 // ─── AI valuations (contents insurance) ──────────────────────────────────────
@@ -263,6 +290,34 @@ export function searchInvoices(filters: SearchFilters = {}): Invoice[] {
   );
 
   return rows.map(deserializeInvoice);
+}
+
+/** Counts a user tap on a category filter — powers the personalized quick chips. */
+export function bumpCategoryTap(name: string): void {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return;
+  db.runSync(
+    `INSERT INTO category_taps (name, taps) VALUES (?, 1)
+     ON CONFLICT(name) DO UPDATE SET taps = taps + 1`,
+    [normalized]
+  );
+}
+
+/**
+ * Categories in use, ranked by how often the USER taps them (filter usage),
+ * falling back to invoice count for categories never tapped yet.
+ */
+export function getCategoryUsage(): { category: string; count: number; taps: number }[] {
+  return db.getAllSync<{ category: string; count: number; taps: number }>(
+    `SELECT LOWER(i.category) as category, COUNT(*) as count, COALESCE(t.taps, 0) as taps
+     FROM invoices i
+     LEFT JOIN category_taps t ON t.name = LOWER(i.category)
+     WHERE (i.status IS NULL OR i.status = 'done')
+       AND i.category IS NOT NULL
+       AND TRIM(i.category) != ''
+     GROUP BY LOWER(i.category)
+     ORDER BY taps DESC, count DESC, MAX(i.createdAt) DESC`
+  );
 }
 
 /** Returns distinct non-empty categories that are actually used by at least one invoice. */
@@ -354,10 +409,104 @@ export function incrementScanCount(): void {
   setSetting('scanCount', String(used + 1));
 }
 
+// ─── Backup / restore ────────────────────────────────────────────────────────
+
+export interface BackupData {
+  version: number;
+  exportedAt: string;
+  invoices: Invoice[];
+  userCategories: string[];
+  userRooms: string[];
+  aiValuations: AIValuationRow[];
+  categoryTaps: { name: string; taps: number }[];
+  settings: { key: string; value: string }[];
+}
+
+export function exportAllData(): BackupData {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    invoices: getAllInvoices(),
+    userCategories: getUserCategories(),
+    userRooms: getUserRooms(),
+    aiValuations: getAIValuations(),
+    categoryTaps: db.getAllSync<{ name: string; taps: number }>(
+      'SELECT name, taps FROM category_taps'
+    ),
+    settings: db.getAllSync<{ key: string; value: string }>('SELECT key, value FROM settings'),
+  };
+}
+
+/** Imports a backup. Invoices with the same id are overwritten; everything else merges. */
+export function importBackupData(data: BackupData): { invoices: number } {
+  let count = 0;
+  db.execSync('BEGIN TRANSACTION');
+  try {
+    for (const inv of data.invoices ?? []) {
+      db.runSync(
+        `INSERT OR REPLACE INTO invoices (id, photoUri, ocrText, vendor, date, items, subtotal, tax, total, category, room, itemPhotos, brand, model, serialNumber, note, tags, status, warrantyMonths, warrantyNotifId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          inv.id,
+          inv.photoUri ?? '',
+          inv.ocrText ?? '',
+          inv.vendor ?? '',
+          inv.date ?? '',
+          JSON.stringify(inv.items ?? []),
+          inv.subtotal ?? 0,
+          inv.tax ?? 0,
+          inv.total ?? 0,
+          inv.category ?? '',
+          inv.room ?? '',
+          JSON.stringify(inv.itemPhotos ?? []),
+          inv.brand ?? '',
+          inv.model ?? '',
+          inv.serialNumber ?? '',
+          inv.note ?? '',
+          JSON.stringify(inv.tags ?? []),
+          inv.status ?? 'done',
+          inv.warrantyMonths ?? 0,
+          '', // old notification ids are invalid on this device
+          inv.createdAt ?? new Date().toISOString(),
+          inv.updatedAt ?? new Date().toISOString(),
+        ]
+      );
+      count++;
+    }
+    for (const c of data.userCategories ?? []) {
+      db.runSync('INSERT OR IGNORE INTO user_categories (name) VALUES (?)', [c]);
+    }
+    for (const r of data.userRooms ?? []) {
+      db.runSync('INSERT OR IGNORE INTO user_rooms (name) VALUES (?)', [r]);
+    }
+    for (const v of data.aiValuations ?? []) {
+      db.runSync(
+        'INSERT OR REPLACE INTO ai_valuations (invoiceId, itemIndex, value, note, valuedAt) VALUES (?, ?, ?, ?, ?)',
+        [v.invoiceId, v.itemIndex, v.value, v.note ?? '', v.valuedAt]
+      );
+    }
+    for (const t of data.categoryTaps ?? []) {
+      db.runSync('INSERT OR IGNORE INTO category_taps (name, taps) VALUES (?, ?)', [
+        t.name,
+        t.taps,
+      ]);
+    }
+    for (const s of data.settings ?? []) {
+      db.runSync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [s.key, s.value]);
+    }
+    db.execSync('COMMIT');
+  } catch (e) {
+    db.execSync('ROLLBACK');
+    throw e;
+  }
+  return { invoices: count };
+}
+
 function deserializeInvoice(row: Record<string, unknown>): Invoice {
   return {
     ...(row as unknown as Invoice),
     items: JSON.parse((row.items as string) || '[]'),
     tags: JSON.parse((row.tags as string) || '[]'),
+    itemPhotos: JSON.parse((row.itemPhotos as string) || '[]'),
   };
 }

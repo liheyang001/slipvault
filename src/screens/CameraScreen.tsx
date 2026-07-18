@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { processInvoiceImage, isImageBlurry } from '../services/imageProcessor';
@@ -21,6 +22,8 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Camera'>;
 
 export default function CameraScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Camera'>>();
+  const defaultRoom = route.params?.defaultRoom;
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
@@ -140,7 +143,7 @@ export default function CameraScreen() {
 
   function handleReview() {
     if (queue.length === 0) return;
-    navigation.navigate('Review', { photoUri: queue[0], queue: queue.slice(1) });
+    navigation.navigate('Review', { photoUri: queue[0], queue: queue.slice(1), defaultRoom });
     setQueue([]);
   }
 
