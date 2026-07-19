@@ -5,6 +5,7 @@ import {
   Image,
   Text,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   Alert,
   TextInput,
@@ -25,9 +26,14 @@ import { cancelWarrantyReminder, scheduleWarrantyReminder } from '../services/no
 import { Invoice } from '../types/invoice';
 import { RootStackParamList } from '../types/navigation';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
-import { mergeRooms, capitalizeRoom, normalizeRoom } from '../utils/rooms';
+import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Photo block: main square takes 70% of the row, thumb column fills the rest exactly.
+const PHOTO_ROW_WIDTH = SCREEN_WIDTH - 40; // minus content padding (32) + gap (8)
+const MAIN_PHOTO_SIZE = Math.round(PHOTO_ROW_WIDTH * 0.78);
+const THUMB_SIZE = PHOTO_ROW_WIDTH - MAIN_PHOTO_SIZE;
 
 const WARRANTY_OPTIONS = [
   { label: 'None', months: 0 },
@@ -54,6 +60,9 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const [editTotal, setEditTotal] = useState('');
   const [categoryPresets, setCategoryPresets] = useState<string[]>(DEFAULT_CATEGORIES);
   const [modalUri, setModalUri] = useState<string | null>(null);
+  const [galleryKey, setGalleryKey] = useState(0);
+  const [zoomed, setZoomed] = useState(false);
+  const [heroUri, setHeroUri] = useState<string | null>(null);
   const [noteModalVisible, setNoteModalVisible] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
 
@@ -68,17 +77,24 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     return Math.sqrt(dx * dx + dy * dy);
   };
 
+  // Claim the gesture only with two fingers so single-finger swipes page the gallery.
   const pinchResponder = React.useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
+      onMoveShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length >= 2,
+      onStartShouldSetPanResponderCapture: (evt) => evt.nativeEvent.touches.length >= 2,
+      onMoveShouldSetPanResponderCapture: (evt) => evt.nativeEvent.touches.length >= 2,
       onPanResponderGrant: (evt) => {
+        setZoomed(true); // freeze paging while pinching
         if (evt.nativeEvent.touches.length === 2) {
           gestureStartDist.current = getDistance([...evt.nativeEvent.touches] as any);
         }
       },
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches;
+        if (touches.length === 2 && gestureStartDist.current === null) {
+          gestureStartDist.current = getDistance([...touches] as any);
+        }
         if (touches.length === 2 && gestureStartDist.current !== null) {
           const dist = getDistance([...touches] as any);
           const next = Math.min(Math.max(committedScale.current * (dist / gestureStartDist.current), 1), 4);
@@ -89,15 +105,33 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       onPanResponderRelease: () => {
         committedScale.current = liveScale.current;
         gestureStartDist.current = null;
+        setZoomed(liveScale.current > 1.01);
+      },
+      onPanResponderTerminate: () => {
+        committedScale.current = liveScale.current;
+        gestureStartDist.current = null;
+        setZoomed(liveScale.current > 1.01);
       },
     })
   ).current;
 
-  const handleCloseModal = () => {
+  const resetZoom = () => {
     scale.setValue(1);
     committedScale.current = 1;
     liveScale.current = 1;
+    setZoomed(false);
+  };
+
+  const handleCloseModal = () => {
+    resetZoom();
     setModalUri(null);
+  };
+
+  /** Open the full-screen gallery starting at the given photo. */
+  const openGallery = (uri: string) => {
+    resetZoom();
+    setGalleryKey((k) => k + 1); // remount the list so it starts on the tapped photo
+    setModalUri(uri);
   };
 
   useEffect(() => {
@@ -218,18 +252,25 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const handleSavePhoto = async () => {
     const sourceUri = modalUri ?? invoice?.photoUri;
     if (!sourceUri) return;
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status !== 'granted') {
+    // Write-only access: enough to add photos, avoids the stricter read permission.
+    const perm = await MediaLibrary.requestPermissionsAsync(true);
+    if (!perm.granted && perm.accessPrivileges !== 'limited') {
       Alert.alert('Permission needed', 'Please allow photo library access to save the image.');
       return;
     }
     const cacheUri = `${FileSystem.cacheDirectory}save_tmp_${Date.now()}.jpg`;
     try {
       await FileSystem.copyAsync({ from: sourceUri, to: cacheUri });
-      await MediaLibrary.saveToLibraryAsync(cacheUri);
-      Alert.alert('Saved', 'Photo saved to your gallery.');
+      const asset = await MediaLibrary.createAssetAsync(cacheUri);
+      // Group into a "Slipvault" album so it's easy to find; skip silently if not allowed.
+      try {
+        const album = await MediaLibrary.getAlbumAsync('Slipvault');
+        if (album) await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        else await MediaLibrary.createAlbumAsync('Slipvault', asset, false);
+      } catch {}
+      Alert.alert('Saved', 'Photo saved to your gallery (Slipvault album).');
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Failed to save photo.');
+      Alert.alert('Save failed', e?.message ?? 'Could not save the photo.');
     } finally {
       FileSystem.deleteAsync(cacheUri, { idempotent: true }).catch(() => {});
     }
@@ -284,6 +325,44 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     ]);
   }
 
+  // ─── Attach a receipt after the fact (manual entries have none) ────────────
+
+  async function attachReceipt(useCamera: boolean) {
+    if (!invoice) return;
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      if (useCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permission needed', 'Camera access is required to photograph the receipt.');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+      } else {
+        result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+      }
+      if (result.canceled || result.assets.length === 0) return;
+
+      // Same folder scanned receipts live in, so backups pick it up.
+      const dir = `${FileSystem.documentDirectory}invoices/`;
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+      const dest = `${dir}receipt_${Date.now()}.jpg`;
+      await FileSystem.copyAsync({ from: result.assets[0].uri, to: dest });
+      updateInvoice(invoice.id, { photoUri: dest });
+      setInvoice(getInvoiceById(invoice.id));
+    } catch {
+      Alert.alert('Error', 'Failed to attach the proof. Please try again.');
+    }
+  }
+
+  function handleAddReceipt() {
+    Alert.alert('Add proof of purchase', 'A receipt, invoice, or bank statement all work.', [
+      { text: 'Take Photo', onPress: () => attachReceipt(true) },
+      { text: 'Choose from Gallery', onPress: () => attachReceipt(false) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
   function handleRemoveItemPhoto(uri: string) {
     if (!invoice) return;
     Alert.alert('Remove Photo', 'Remove this item photo?', [
@@ -304,24 +383,66 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
 
   if (!invoice) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <Text>Loading...</Text>
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView>
-        {/* Tappable photo */}
-        <TouchableOpacity onPress={() => setModalUri(invoice.photoUri)} activeOpacity={0.9}>
-          <Image source={{ uri: invoice.photoUri }} style={styles.image} />
-          <View style={styles.photoHint}>
-            <Text style={styles.photoHintText}>Tap to enlarge</Text>
-          </View>
-        </TouchableOpacity>
+  // The item is the star: item photos lead, the receipt (if any) rides along at the end.
+  const itemPhotos = invoice.itemPhotos ?? [];
+  const galleryPhotos = [...itemPhotos, ...(invoice.photoUri ? [invoice.photoUri] : [])];
+  const galleryIndex = Math.max(0, galleryPhotos.indexOf(modalUri ?? galleryPhotos[0]));
 
+  // Square main photo: tapped thumb becomes the main; falls back to the first photo.
+  const mainPhoto = heroUri && itemPhotos.includes(heroUri) ? heroUri : itemPhotos[0];
+
+  return (
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <ScrollView>
         <View style={styles.content}>
+          {/* Main photo (square) + thumb column on the right; receipt is a row further down */}
+          {itemPhotos.length > 0 ? (
+            <View style={styles.photoBlock}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => openGallery(mainPhoto)}
+                style={styles.mainPhotoWrap}
+              >
+                <Image source={{ uri: mainPhoto }} style={styles.mainPhoto} resizeMode="cover" />
+              </TouchableOpacity>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.thumbRowContent}
+              >
+                {itemPhotos.map((uri) => (
+                  <TouchableOpacity key={uri} onPress={() => setHeroUri(uri)} activeOpacity={0.8}>
+                    <Image
+                      source={{ uri }}
+                      style={[styles.itemPhoto, uri === mainPhoto && styles.itemPhotoActive]}
+                    />
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddItemPhoto}>
+                  <Text style={styles.addPhotoPlus}>＋</Text>
+                  <Text style={styles.addPhotoText}>Add</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.heroEmpty}
+              onPress={handleAddItemPhoto}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="camera-outline" size={40} color="#94a3b8" />
+              <Text style={styles.heroEmptyTitle}>Add a photo of the item</Text>
+              <Text style={styles.heroEmptySub}>
+                Insurers want to see the item itself — the receipt is saved below
+              </Text>
+            </TouchableOpacity>
+          )}
           {/* Merchant */}
           <View style={styles.field}>
             <Text style={styles.label}>Merchant</Text>
@@ -357,7 +478,14 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                 </View>
                 <View style={styles.pairRight}>
                   <Text style={styles.label}>Room</Text>
-                  <Text style={styles.value}>{capitalizeRoom(invoice.room ?? '') || '—'}</Text>
+                  <View style={styles.valueRow}>
+                    {invoice.room ? (
+                      <Text style={styles.valueIcon}>{roomIcon(invoice.room)}</Text>
+                    ) : null}
+                    <Text style={styles.valueInRow}>
+                      {invoice.room ? capitalizeRoom(invoice.room) : '—'}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>
@@ -415,6 +543,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                       style={[styles.preset, normalizeRoom(editRoom) === r && styles.presetActive]}
                       onPress={() => setEditRoom(r)}
                     >
+                      <Text style={styles.presetIcon}>{roomIcon(r)}</Text>
                       <Text style={[styles.presetText, normalizeRoom(editRoom) === r && styles.presetTextActive]}>
                         {capitalizeRoom(r)}
                       </Text>
@@ -545,7 +674,6 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                     <Text style={[styles.value, expired && styles.valueExpired, expiring && styles.valueExpiring]}>
                       {statusText}
                     </Text>
-                    {!!invoice.note && <Text style={styles.noteText}>{invoice.note}</Text>}
                   </View>
                   <TouchableOpacity
                     style={styles.noteIconBtn}
@@ -578,33 +706,38 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Item photos (proof of ownership) */}
-          <View style={styles.field}>
-            <Text style={styles.label}>Item Photos (proof of ownership)</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.itemPhotoRow}
+          {/* Receipt: proof of purchase, demoted from hero; attachable when missing */}
+          {invoice.photoUri ? (
+            <TouchableOpacity
+              style={styles.receiptRow}
+              onPress={() => openGallery(invoice.photoUri)}
+              activeOpacity={0.7}
             >
-              {(invoice.itemPhotos ?? []).map((uri) => (
-                <TouchableOpacity
-                  key={uri}
-                  onPress={() => setModalUri(uri)}
-                  onLongPress={() => handleRemoveItemPhoto(uri)}
-                  activeOpacity={0.8}
-                >
-                  <Image source={{ uri }} style={styles.itemPhoto} />
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddItemPhoto}>
-                <Text style={styles.addPhotoPlus}>＋</Text>
-                <Text style={styles.addPhotoText}>Add</Text>
-              </TouchableOpacity>
-            </ScrollView>
-            {(invoice.itemPhotos?.length ?? 0) > 0 && (
-              <Text style={styles.hintText}>Tap to view · long-press to remove</Text>
-            )}
-          </View>
+              <Image source={{ uri: invoice.photoUri }} style={styles.receiptThumb} />
+              <View style={styles.receiptContent}>
+                <Text style={styles.receiptTitle}>Receipt</Text>
+                <Text style={styles.receiptSub}>Proof of purchase · tap to view</Text>
+              </View>
+              <Text style={styles.receiptChevron}>›</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.receiptRow, styles.receiptRowEmpty]}
+              onPress={handleAddReceipt}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.receiptThumb, styles.receiptThumbEmpty]}>
+                <Ionicons name="receipt-outline" size={20} color="#94a3b8" />
+              </View>
+              <View style={styles.receiptContent}>
+                <Text style={styles.receiptTitle}>No receipt</Text>
+                <Text style={styles.receiptSub}>
+                  Add proof of purchase — receipt or bank statement
+                </Text>
+              </View>
+              <Text style={styles.receiptChevron}>＋</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 
@@ -677,18 +810,61 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
         onRequestClose={handleCloseModal}
       >
         <View style={styles.modalBg}>
-          <View style={styles.modalImageContainer} {...pinchResponder.panHandlers}>
-            <Animated.Image
-              source={{ uri: modalUri ?? invoice.photoUri }}
-              style={[styles.modalImage, { transform: [{ scale }] }]}
-              resizeMode="contain"
-            />
-          </View>
+          <FlatList
+            key={`gallery-${galleryKey}`}
+            style={styles.gallery}
+            data={galleryPhotos}
+            keyExtractor={(u) => u}
+            horizontal
+            pagingEnabled
+            scrollEnabled={!zoomed}
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={galleryIndex}
+            getItemLayout={(_, i) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * i, index: i })}
+            onMomentumScrollEnd={(e) => {
+              const page = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+              const uri = galleryPhotos[page];
+              if (uri && uri !== modalUri) {
+                resetZoom();
+                setModalUri(uri);
+              }
+            }}
+            renderItem={({ item }) => (
+              <View style={styles.galleryPage} {...pinchResponder.panHandlers}>
+                <Animated.Image
+                  source={{ uri: item }}
+                  style={[styles.modalImage, { transform: [{ scale }] }]}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+          />
+
+          {galleryPhotos.length > 1 && (
+            <View style={styles.galleryCounter}>
+              <Text style={styles.galleryCounterText}>
+                {galleryIndex + 1} / {galleryPhotos.length} ·{' '}
+                {galleryIndex < itemPhotos.length ? 'Item photo' : 'Receipt'}
+              </Text>
+            </View>
+          )}
 
           <View style={styles.modalActions}>
             <TouchableOpacity style={styles.modalBtn} onPress={handleSavePhoto}>
               <Text style={styles.modalBtnText}>Save to Photos</Text>
             </TouchableOpacity>
+            {modalUri !== null && (invoice.itemPhotos ?? []).includes(modalUri) && (
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnDelete]}
+                onPress={() => {
+                  const uri = modalUri;
+                  handleCloseModal();
+                  handleRemoveItemPhoto(uri);
+                }}
+              >
+                <Text style={styles.modalBtnText}>Delete</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={[styles.modalBtn, styles.modalBtnClose]} onPress={handleCloseModal}>
               <Text style={styles.modalBtnText}>Close</Text>
             </TouchableOpacity>
@@ -704,22 +880,36 @@ const styles = StyleSheet.create({
   headerBtn: { paddingHorizontal: 4 },
   headerBtnText: { color: '#2563EB', fontSize: 16, fontWeight: '600' },
 
-  image: { width: '100%', height: 250 },
-  photoHint: {
-    position: 'absolute',
-    bottom: 8,
-    right: 10,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+  // Full-width main square on top, horizontal thumb strip below.
+  photoBlock: { gap: 8, marginBottom: 12 },
+  mainPhotoWrap: { alignSelf: 'stretch' },
+  mainPhoto: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
   },
-  photoHintText: { color: '#fff', fontSize: 11 },
+  thumbRowContent: { gap: 8 },
+  heroEmpty: {
+    height: 170,
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 32,
+    marginBottom: 8,
+  },
+  heroEmptyTitle: { fontSize: 15, fontWeight: '700', color: '#334155' },
+  heroEmptySub: { fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 17 },
 
-  content: { padding: 16 },
+  content: { padding: 16, paddingTop: 20 },
   field: { backgroundColor: '#fff', padding: 12, marginBottom: 8, borderRadius: 8 },
   label: { fontSize: 12, color: '#999', fontWeight: '600' },
   value: { fontSize: 16, color: '#000', marginTop: 4 },
+  valueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  valueIcon: { fontSize: 14 },
+  valueInRow: { fontSize: 16, color: '#000' },
   totalValue: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50' },
   fieldExpired: { borderLeftWidth: 3, borderLeftColor: '#ef4444' },
   fieldExpiring: { borderLeftWidth: 3, borderLeftColor: '#f59e0b' },
@@ -742,15 +932,6 @@ const styles = StyleSheet.create({
   noteIconBtn: {
     alignSelf: 'center',
     padding: 4,
-  },
-  noteText: {
-    fontSize: 13,
-    color: '#4b5563',
-    marginTop: 8,
-    lineHeight: 18,
-    backgroundColor: '#f9fafb',
-    borderRadius: 6,
-    padding: 8,
   },
   noteModalBg: {
     flex: 1,
@@ -803,6 +984,9 @@ const styles = StyleSheet.create({
   },
   presets: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 8 },
   preset: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -811,22 +995,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   presetActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  presetIcon: { fontSize: 12 },
   presetText: { fontSize: 13, color: '#374151' },
   presetTextActive: { color: '#fff', fontWeight: '600' },
   hintText: { marginTop: 8, fontSize: 11, color: '#9ca3af', fontStyle: 'italic' },
   totalInput: { fontSize: 18, fontWeight: 'bold', color: '#4CAF50' },
 
-  itemPhotoRow: { gap: 8, paddingTop: 8 },
+  itemPhotoRow: { gap: 8, paddingTop: 8, paddingBottom: 12 },
   itemPhoto: {
-    width: 84,
-    height: 84,
-    borderRadius: 10,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: 8,
     backgroundColor: '#e5e7eb',
   },
+  itemPhotoActive: {
+    borderWidth: 2,
+    borderColor: '#2563eb',
+  },
   addPhotoTile: {
-    width: 84,
-    height: 84,
-    borderRadius: 10,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: 8,
     borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: '#93c5fd',
@@ -837,6 +1026,28 @@ const styles = StyleSheet.create({
   },
   addPhotoPlus: { fontSize: 24, color: '#2563eb', lineHeight: 28 },
   addPhotoText: { fontSize: 11, color: '#2563eb', fontWeight: '600' },
+
+  receiptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    padding: 10,
+  },
+  receiptThumb: { width: 44, height: 44, borderRadius: 6, backgroundColor: '#e5e7eb' },
+  receiptRowEmpty: { borderStyle: 'dashed', borderColor: '#cbd5e1', backgroundColor: '#fbfdff' },
+  receiptThumbEmpty: {
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptContent: { flex: 1, gap: 2 },
+  receiptTitle: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
+  receiptSub: { fontSize: 12, color: '#9ca3af' },
+  receiptChevron: { fontSize: 22, color: '#cbd5e1', fontWeight: '300' },
 
   controls: { padding: 16, borderTopWidth: 1, borderTopColor: '#eee' },
   button: { paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
@@ -849,10 +1060,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.95)',
   },
-  modalImageContainer: {
-    flex: 1,
+  gallery: { flex: 1 },
+  galleryPage: {
+    width: SCREEN_WIDTH,
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  galleryCounter: {
+    position: 'absolute',
+    top: 56,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  galleryCounterText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   modalImage: {
@@ -873,5 +1103,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalBtnClose: { backgroundColor: '#374151' },
+  modalBtnDelete: { backgroundColor: '#dc2626' },
   modalBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

@@ -18,7 +18,7 @@ import { processInvoiceImage } from '../services/imageProcessor';
 import { insertInvoice, findDuplicateInvoice, updateInvoice, getUserRooms, saveUserRoom } from '../services/database';
 import { scheduleWarrantyReminder } from '../services/notifications';
 import { DEFAULT_CATEGORIES, capitalize } from '../utils/categories';
-import { mergeRooms, capitalizeRoom, normalizeRoom } from '../utils/rooms';
+import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
 
 const WARRANTY_OPTIONS = [
   { label: 'None', months: 0 },
@@ -310,6 +310,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
                       style={[styles.chip, normalizeRoom(room) === r && styles.chipActive]}
                       onPress={() => setRoom(r)}
                     >
+                      <Text style={styles.chipIcon}>{roomIcon(r)}</Text>
                       <Text style={[styles.chipText, normalizeRoom(room) === r && styles.chipTextActive]}>
                         {capitalizeRoom(r)}
                       </Text>
@@ -468,6 +469,9 @@ const styles = StyleSheet.create({
 
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 16,
@@ -476,6 +480,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   chipActive: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  chipIcon: { fontSize: 12 },
   chipText: { fontSize: 13, color: '#374151' },
   chipTextActive: { color: '#fff', fontWeight: '600' },
 

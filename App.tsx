@@ -9,6 +9,7 @@ import { RootStackParamList } from './src/types/navigation';
 import HomeScreen from './src/screens/HomeScreen';
 import CameraScreen from './src/screens/CameraScreen';
 import ReviewScreen from './src/screens/ReviewScreen';
+import ManualEntryScreen from './src/screens/ManualEntryScreen';
 import InvoiceDetailScreen from './src/screens/InvoiceDetailScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import PaywallScreen from './src/screens/PaywallScreen';
@@ -70,6 +71,11 @@ export default function App() {
           name="Review"
           component={ReviewScreen}
           options={{ title: 'Review Invoice' }}
+        />
+        <Stack.Screen
+          name="ManualEntry"
+          component={ManualEntryScreen}
+          options={{ title: 'Add Item' }}
         />
         <Stack.Screen
           name="InvoiceDetail"

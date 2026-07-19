@@ -382,6 +382,15 @@ export function getInvoiceCount(): number {
   return row?.c ?? 0;
 }
 
+/** How many invoices were added after the given time — powers the backup nudge. */
+export function countInvoicesCreatedAfter(iso: string): number {
+  const row = db.getFirstSync<{ c: number }>(
+    'SELECT COUNT(*) as c FROM invoices WHERE createdAt > ?',
+    [iso]
+  );
+  return row?.c ?? 0;
+}
+
 export const FREE_SCAN_LIMIT = 15;
 
 export function isProUser(): boolean {

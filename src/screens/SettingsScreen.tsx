@@ -34,12 +34,24 @@ export default function SettingsScreen() {
   const [pro, setPro] = useState(false);
   const [invoiceCount, setInvoiceCount] = useState(0);
   const [busy, setBusy] = useState<'backup' | 'restore' | null>(null);
+  const [lastBackup, setLastBackup] = useState('');
 
   useEffect(() => {
     setMonthlyEnabled(getSetting('monthlyNotif', 'false') === 'true');
     setPro(isProUser());
     setInvoiceCount(getInvoiceCount());
+    setLastBackup(getSetting('lastBackupAt', ''));
   }, []);
+
+  function formatBackupDate(iso: string): string {
+    const t = Date.parse(iso);
+    if (Number.isNaN(t)) return '';
+    return new Date(t).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
 
   async function handleMonthlyToggle(value: boolean) {
     setMonthlyEnabled(value);
@@ -70,6 +82,7 @@ export default function SettingsScreen() {
     setBusy('backup');
     try {
       const count = await createBackup();
+      setLastBackup(getSetting('lastBackupAt', ''));
       // Share sheet handles the rest; nothing to confirm here.
       if (count === 0) Alert.alert('Backup created', 'Note: you have no invoices yet.');
     } catch {
@@ -153,7 +166,9 @@ export default function SettingsScreen() {
           <View style={styles.rowContent}>
             <Text style={styles.rowTitle}>Back up now</Text>
             <Text style={styles.rowSub}>
-              Bundle all invoices & photos into a zip — share it to Google Drive, email, anywhere
+              {lastBackup
+                ? `Last backup: ${formatBackupDate(lastBackup)}`
+                : 'Never backed up — bundle everything into a zip for Google Drive, email, anywhere'}
             </Text>
           </View>
           {busy === 'backup' ? (

@@ -25,8 +25,11 @@ import {
   bumpCategoryTap,
   isProUser,
   getInvoiceCount,
+  countInvoicesCreatedAfter,
+  getSetting,
   FREE_INVOICE_LIMIT,
 } from '../services/database';
+import { createBackup } from '../services/backup';
 import { processInvoiceImage } from '../services/imageProcessor';
 import { extractInvoiceData } from '../services/claude';
 import InvoiceCard from '../components/InvoiceCard';
@@ -55,6 +58,8 @@ export default function HomeScreen() {
   const [pendingCount, setPendingCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [quota, setQuota] = useState<{ pro: boolean; count: number }>({ pro: true, count: 0 });
+  const [backupNudge, setBackupNudge] = useState('');
+  const [backingUp, setBackingUp] = useState(false);
 
   // View switching: fixed header, native pager below (both pages visible while sliding)
   const [view, setView] = useState<ToggleView>('invoices');
@@ -126,7 +131,23 @@ export default function HomeScreen() {
     useCallback(() => {
       // Categories in use, most-used first (personalized quick filters)
       setCategoryUsage(getCategoryUsage());
-      setQuota({ pro: isProUser(), count: getInvoiceCount() });
+      const totalCount = getInvoiceCount();
+      setQuota({ pro: isProUser(), count: totalCount });
+
+      // Backup nudge: never backed up (≥5 invoices), stale (>30 days), or 10+ new since
+      let nudge = '';
+      if (totalCount > 0) {
+        const last = getSetting('lastBackupAt', '');
+        if (!last) {
+          if (totalCount >= 5) nudge = `${totalCount} invoices not backed up yet`;
+        } else {
+          const newSince = countInvoicesCreatedAfter(last);
+          const days = Math.floor((Date.now() - Date.parse(last)) / 86400000);
+          if (newSince >= 10) nudge = `${newSince} new invoices since last backup`;
+          else if (days > 30) nudge = `Last backup ${days} days ago`;
+        }
+      }
+      setBackupNudge(nudge);
 
       const filters: SearchFilters = {
         ...activeFilters,
@@ -151,6 +172,7 @@ export default function HomeScreen() {
     let successCount = 0;
     for (const inv of toProcess) {
       try {
+        if (!inv.photoUri) continue; // manual entries have no receipt to re-scan
         const processed = await processInvoiceImage(inv.photoUri);
         const extracted = await extractInvoiceData(processed.base64);
         updateInvoice(inv.id, {
@@ -301,6 +323,37 @@ export default function HomeScreen() {
             {Math.min(quota.count, FREE_INVOICE_LIMIT)}/{FREE_INVOICE_LIMIT} free invoices used
           </Text>
           <Text style={styles.quotaAction}>Go Pro</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Backup nudge */}
+      {!!backupNudge && (
+        <TouchableOpacity
+          style={styles.backupBanner}
+          onPress={async () => {
+            if (backingUp) return;
+            setBackingUp(true);
+            try {
+              await createBackup();
+              setBackupNudge('');
+            } catch {
+              Alert.alert('Backup failed', 'Could not create the backup. Please try again.');
+            } finally {
+              setBackingUp(false);
+            }
+          }}
+          disabled={backingUp}
+          activeOpacity={0.8}
+        >
+          {backingUp ? (
+            <ActivityIndicator size="small" color="#854d0e" />
+          ) : (
+            <Text style={styles.backupIcon}>☁️</Text>
+          )}
+          <Text style={styles.backupText}>
+            {backingUp ? 'Preparing backup…' : backupNudge}
+          </Text>
+          {!backingUp && <Text style={styles.backupAction}>Back up</Text>}
         </TouchableOpacity>
       )}
 
@@ -480,17 +533,37 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Scan FAB — floats above the pager on Invoices and Rooms views */}
+      {/* Add FAB — floats above the pager on Invoices and Rooms views */}
       {view !== 'insurance' && (
         <TouchableOpacity
           style={styles.fab}
-          onPress={() =>
-            navigation.navigate(
-              'Camera',
-              // Scanning from a room? New invoices default to that room.
-              view === 'rooms' && currentRoom ? { defaultRoom: currentRoom } : undefined
-            )
-          }
+          onPress={() => {
+            // Adding from a room? New entries default to that room.
+            const params =
+              view === 'rooms' && currentRoom ? { defaultRoom: currentRoom } : undefined;
+            Alert.alert('Add to your inventory', undefined, [
+              { text: '📷 Scan receipt', onPress: () => navigation.navigate('Camera', params) },
+              {
+                text: '✍️ Add manually (no receipt)',
+                onPress: () => {
+                  // Gate here so users never fill in a form they can't save.
+                  if (!quota.pro && quota.count >= FREE_INVOICE_LIMIT) {
+                    Alert.alert(
+                      'Free limit reached',
+                      `The free plan stores up to ${FREE_INVOICE_LIMIT} invoices. Upgrade to Pro for unlimited invoices.`,
+                      [
+                        { text: 'Not now', style: 'cancel' },
+                        { text: 'See Pro', onPress: () => navigation.navigate('Paywall') },
+                      ]
+                    );
+                    return;
+                  }
+                  navigation.navigate('ManualEntry', params);
+                },
+              },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+          }}
           activeOpacity={0.85}
         >
           <Text style={styles.fabText}>+</Text>
@@ -625,6 +698,21 @@ const styles = StyleSheet.create({
   },
   quotaText: { fontSize: 13, color: '#1d4ed8', fontWeight: '600' },
   quotaAction: { fontSize: 13, color: '#2563eb', fontWeight: '800' },
+
+  // Backup nudge banner
+  backupBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#fefce8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#fef08a',
+  },
+  backupIcon: { fontSize: 14 },
+  backupText: { flex: 1, fontSize: 13, color: '#854d0e', fontWeight: '500' },
+  backupAction: { fontSize: 13, color: '#a16207', fontWeight: '800' },
 
   // Pending banner
   pendingBanner: {

@@ -26,7 +26,7 @@ import {
   RoomValue,
   ValuedItem,
 } from '../utils/valuation';
-import { capitalizeRoom } from '../utils/rooms';
+import { capitalizeRoom, roomIcon } from '../utils/rooms';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -142,9 +142,12 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
           <Text style={styles.sectionTitle}>VALUE BY ROOM</Text>
           {roomValues.map((r) => (
             <View key={r.room || '_none'} style={styles.roomRow}>
-              <Text style={styles.roomName}>
-                {r.room ? capitalizeRoom(r.room) : 'Unassigned'}
-              </Text>
+              <View style={styles.roomNameRow}>
+                {r.room ? <Text style={styles.roomIcon}>{roomIcon(r.room)}</Text> : null}
+                <Text style={styles.roomName}>
+                  {r.room ? capitalizeRoom(r.room) : 'Unassigned'}
+                </Text>
+              </View>
               <View style={styles.roomAmounts}>
                 <Text style={styles.roomCurrent}>${r.current.toFixed(2)}</Text>
                 <Text style={styles.roomPurchase}>was ${r.purchase.toFixed(2)}</Text>
@@ -275,6 +278,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  roomNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  roomIcon: { fontSize: 13 },
   roomName: { fontSize: 14, color: '#0f172a', fontWeight: '600' },
   roomAmounts: { alignItems: 'flex-end' },
   roomCurrent: { fontSize: 14, fontWeight: '700', color: '#2563eb' },

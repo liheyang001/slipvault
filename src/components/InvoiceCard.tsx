@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Invoice } from '../types/invoice';
+import { capitalizeRoom, roomIcon } from '../utils/rooms';
 
 interface Props {
   invoice: Invoice;
@@ -53,12 +55,18 @@ export default function InvoiceCard({ invoice, onPress, onDelete, onLongPress }:
       onLongPress={onLongPress}
       activeOpacity={0.75}
     >
-      {/* Photo thumbnail */}
-      <Image
-        source={{ uri: invoice.photoUri }}
-        style={styles.thumbnail}
-        resizeMode="cover"
-      />
+      {/* Thumbnail: the actual item, not the receipt; camera placeholder if none */}
+      {invoice.itemPhotos?.[0] ? (
+        <Image
+          source={{ uri: invoice.itemPhotos[0] }}
+          style={styles.thumbnail}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
+          <Ionicons name="camera-outline" size={26} color="#94a3b8" />
+        </View>
+      )}
 
       {/* Content */}
       <View style={styles.content}>
@@ -82,6 +90,14 @@ export default function InvoiceCard({ invoice, onPress, onDelete, onLongPress }:
               <Text style={styles.badgeIcon}>{cfg.icon}</Text>
               <Text style={[styles.badgeText, { color: cfg.color }]}>
                 {invoice.category.charAt(0).toUpperCase() + invoice.category.slice(1)}
+              </Text>
+            </View>
+          ) : null}
+          {invoice.room ? (
+            <View style={[styles.badge, styles.roomBadge]}>
+              <Text style={styles.badgeIcon}>{roomIcon(invoice.room)}</Text>
+              <Text style={[styles.badgeText, styles.roomBadgeText]} numberOfLines={1}>
+                {capitalizeRoom(invoice.room)}
               </Text>
             </View>
           ) : null}
@@ -127,6 +143,10 @@ const styles = StyleSheet.create({
     width: 76,
     height: 80,
     backgroundColor: '#f1f5f9',
+  },
+  thumbnailPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
@@ -176,6 +196,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  roomBadge: { backgroundColor: '#f1f5f9', flexShrink: 1 },
+  roomBadgeText: { color: '#475569' },
   deleteZone: {
     paddingHorizontal: 12,
     paddingVertical: 8,

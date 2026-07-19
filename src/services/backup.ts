@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
-import { exportAllData, importBackupData, BackupData } from './database';
+import { exportAllData, importBackupData, setSetting, BackupData } from './database';
 
 // Backs up the entire archive (database + all photos) into a single zip the
 // user can share to Google Drive / email / anywhere — and restores from it.
@@ -53,6 +53,7 @@ export async function createBackup(): Promise<number> {
   });
 
   await Sharing.shareAsync(fileUri, { mimeType: 'application/zip' });
+  setSetting('lastBackupAt', new Date().toISOString());
   return data.invoices.length;
 }
 

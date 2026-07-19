@@ -20,7 +20,7 @@ import {
   deleteInvoice,
   getUserRooms,
 } from '../services/database';
-import { capitalizeRoom, mergeRooms, normalizeRoom } from '../utils/rooms';
+import { capitalizeRoom, mergeRooms, normalizeRoom, roomIcon } from '../utils/rooms';
 import InvoiceCard from '../components/InvoiceCard';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -180,6 +180,7 @@ export default function RoomsScreen({ query = '', onRoomChange }: Props) {
             style={[styles.chip, selectedRoom === r.room && styles.chipActive]}
             onPress={() => handleSelectRoom(r.room)}
           >
+            <Text style={styles.chipIcon}>{roomIcon(r.room)}</Text>
             <Text style={[styles.chipText, selectedRoom === r.room && styles.chipTextActive]}>
               {capitalizeRoom(r.room)} ({r.count})
             </Text>
@@ -192,7 +193,10 @@ export default function RoomsScreen({ query = '', onRoomChange }: Props) {
         {!editing ? (
           <>
             <View style={styles.summaryLeft}>
-              <Text style={styles.summaryRoom}>{capitalizeRoom(selectedRoom)}</Text>
+              <View style={styles.summaryTitleRow}>
+                <Text style={styles.summaryIcon}>{roomIcon(selectedRoom)}</Text>
+                <Text style={styles.summaryRoom}>{capitalizeRoom(selectedRoom)}</Text>
+              </View>
               <Text style={styles.summarySub}>
                 {invoices.length} invoice{invoices.length !== 1 ? 's' : ''} · $
                 {roomTotal.toFixed(2)}
@@ -314,6 +318,7 @@ export default function RoomsScreen({ query = '', onRoomChange }: Props) {
             <View style={styles.modalChips}>
               {moveTargets.map((r) => (
                 <TouchableOpacity key={r} style={styles.modalChip} onPress={() => handleMove(r)}>
+                  <Text style={styles.modalChipIcon}>{roomIcon(r)}</Text>
                   <Text style={styles.modalChipText}>{capitalizeRoom(r)}</Text>
                 </TouchableOpacity>
               ))}
@@ -341,8 +346,17 @@ const styles = StyleSheet.create({
     maxHeight: 48,
   },
   roomContent: { paddingHorizontal: 14, paddingVertical: 8, gap: 8, flexDirection: 'row' },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#f1f5f9' },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 6,
+    backgroundColor: '#f1f5f9',
+  },
   chipActive: { backgroundColor: '#2563eb' },
+  chipIcon: { fontSize: 12 },
   chipText: { fontSize: 13, color: '#475569', fontWeight: '500' },
   chipTextActive: { color: '#fff', fontWeight: '700' },
 
@@ -354,6 +368,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   summaryLeft: { flex: 1 },
+  summaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  summaryIcon: { fontSize: 16 },
   summaryRoom: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
   summarySub: { fontSize: 13, color: '#64748b', marginTop: 2 },
   editBtn: {
@@ -434,11 +450,15 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 15, fontWeight: '700', color: '#0f172a', lineHeight: 21 },
   modalChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   modalChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderRadius: 18,
+    borderRadius: 6,
     backgroundColor: '#eef2f6',
   },
+  modalChipIcon: { fontSize: 13 },
   modalChipText: { fontSize: 14, color: '#0f172a', fontWeight: '600' },
   modalCancel: { alignItems: 'center', paddingVertical: 8 },
   modalCancelText: { fontSize: 14, color: '#64748b', fontWeight: '600' },
