@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ import {
   getInvoiceCount,
   countInvoicesCreatedAfter,
   getSetting,
+  setSetting,
   FREE_INVOICE_LIMIT,
 } from '../services/database';
 import { createBackup } from '../services/backup';
@@ -34,6 +35,7 @@ import { processInvoiceImage } from '../services/imageProcessor';
 import { extractInvoiceData } from '../services/claude';
 import InvoiceCard from '../components/InvoiceCard';
 import ViewToggle, { ToggleView } from '../components/ViewToggle';
+import SpotlightOverlay, { SpotlightStep } from '../components/SpotlightOverlay';
 import RoomsScreen from './RoomsScreen';
 import InsuranceScreen, { ValuationState } from './InsuranceScreen';
 import { capitalize } from '../utils/categories';
@@ -67,9 +69,30 @@ export default function HomeScreen() {
   const [valuation, setValuation] = useState<ValuationState | null>(null);
   const pagerRef = useRef<PagerView>(null);
 
+  // First-run spotlight tour targets
+  const fabRef = useRef<any>(null);
+  const searchInputRef = useRef<any>(null);
+  const toggleWrapRef = useRef<any>(null);
+  const catRowRef = useRef<any>(null);
+  const [showSpotlight, setShowSpotlight] = useState(false);
+
   function switchView(next: ToggleView) {
     setView(next); // instant toggle highlight
     pagerRef.current?.setPage(VIEW_ORDER[next]); // native animated slide
+  }
+
+  // One-time spotlight tour: fires on the first Home mount after this flag is
+  // unset — covers both brand-new users (right after onboarding) and existing
+  // users seeing this feature for the first time after an app update.
+  useEffect(() => {
+    if (getSetting('hasSeenSpotlight', 'false') === 'true') return;
+    const timer = setTimeout(() => setShowSpotlight(true), 400);
+    return () => clearTimeout(timer);
+  }, []);
+
+  function finishSpotlight() {
+    setSetting('hasSeenSpotlight', 'true');
+    setShowSpotlight(false);
   }
 
   function handleExport() {
@@ -232,11 +255,35 @@ export default function HomeScreen() {
   const canExport = view === 'rooms' ? currentRoom !== '' : invoices.length > 0;
   const exportLabel = view === 'rooms' ? 'Export Room' : 'Export';
 
+  const spotlightSteps: SpotlightStep[] = [
+    {
+      ref: fabRef,
+      title: 'Add an item',
+      body: "Tap here to scan a receipt, or add an item by hand if you don't have one.",
+    },
+    {
+      ref: searchInputRef,
+      title: 'Search anytime',
+      body: 'Find anything by vendor, item name, or price.',
+    },
+    {
+      ref: toggleWrapRef,
+      title: 'Three views, one app',
+      body: 'Switch between your Invoices list, Rooms, and the Insurance dashboard.',
+    },
+    {
+      ref: catRowRef,
+      title: 'Quick category filters',
+      body: 'Your most-used categories show up here for one-tap filtering.',
+    },
+  ];
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Search + filter button */}
       <View style={styles.searchRow}>
         <TextInput
+          ref={searchInputRef}
           style={styles.searchInput}
           placeholder="Search vendor, item..."
           placeholderTextColor="#9ca3af"
@@ -254,7 +301,9 @@ export default function HomeScreen() {
       </View>
 
       {/* Fixed view toggle — content below slides, header stays put */}
-      <ViewToggle active={view} onSelect={switchView} />
+      <View ref={toggleWrapRef} collapsable={false}>
+        <ViewToggle active={view} onSelect={switchView} />
+      </View>
 
       <PagerView
         ref={pagerRef}
@@ -271,7 +320,7 @@ export default function HomeScreen() {
             ? [...top.slice(0, 1), selectedCategory]
             : top;
         return (
-          <View style={styles.catRow}>
+          <View style={styles.catRow} ref={catRowRef} collapsable={false}>
             <TouchableOpacity
               style={[styles.catChip, !selectedCategory && styles.catChipActive]}
               onPress={() => pickCategory('')}
@@ -536,6 +585,7 @@ export default function HomeScreen() {
       {/* Add FAB — floats above the pager on Invoices and Rooms views */}
       {view !== 'insurance' && (
         <TouchableOpacity
+          ref={fabRef}
           style={styles.fab}
           onPress={() => {
             // Adding from a room? New entries default to that room.
@@ -569,6 +619,8 @@ export default function HomeScreen() {
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       )}
+
+      {showSpotlight && <SpotlightOverlay steps={spotlightSteps} onDone={finishSpotlight} />}
     </SafeAreaView>
   );
 }
