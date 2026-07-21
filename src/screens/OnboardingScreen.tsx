@@ -36,7 +36,10 @@ export default function OnboardingScreen() {
   function handleFinish() {
     setSetting('hasSeenOnboarding', 'true');
     if (navigation.canGoBack()) {
-      navigation.goBack();
+      // Replaying from Settings: collapse back to the existing Home screen
+      // (dropping Settings + this screen from the stack) and chain into the
+      // spotlight tour there too, so "View Tutorial" replays the whole thing.
+      navigation.navigate('Home', { showSpotlight: true });
     } else {
       navigation.replace('Home');
     }

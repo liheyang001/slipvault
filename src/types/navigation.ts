@@ -2,7 +2,7 @@ import { SearchFilters } from './invoice';
 
 export type RootStackParamList = {
   Onboarding: undefined;
-  Home: { filters?: SearchFilters } | undefined;
+  Home: { filters?: SearchFilters; showSpotlight?: boolean } | undefined;
   Camera: { defaultRoom?: string } | undefined;
   Review: { photoUri: string; queue?: string[]; defaultRoom?: string };
   ManualEntry: { defaultRoom?: string } | undefined;

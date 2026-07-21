@@ -12,8 +12,9 @@ import {
 } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../types/navigation';
 import { Invoice, SearchFilters } from '../types/invoice';
@@ -49,6 +50,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Home'>>();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<SearchFilters>({});
@@ -94,6 +96,16 @@ export default function HomeScreen() {
     setSetting('hasSeenSpotlight', 'true');
     setShowSpotlight(false);
   }
+
+  // Re-triggered explicitly from OnboardingScreen when "View Tutorial" is
+  // replayed from Settings — Home is already mounted then, so the mount-once
+  // effect above won't fire again; this reacts to the param instead.
+  useEffect(() => {
+    if (route.params?.showSpotlight) {
+      setShowSpotlight(true);
+      navigation.setParams({ showSpotlight: undefined }); // consume so it doesn't refire
+    }
+  }, [route.params?.showSpotlight]);
 
   function handleExport() {
     // Rooms view: export the currently selected room as an insurance inventory
