@@ -70,6 +70,45 @@ export interface ValuedItem {
   currentUnitValue: number; // depreciated value per single item
 }
 
+/** Flattens one insurable invoice into its constituent valued items. */
+function flattenInvoiceItems(inv: Invoice): ValuedItem[] {
+  const base = {
+    invoiceId: inv.id,
+    vendor: inv.vendor,
+    date: inv.date,
+    room: inv.room ?? '',
+    category: inv.category,
+  };
+  if (inv.items.length === 0) {
+    if (inv.total <= 0) return [];
+    return [
+      {
+        ...base,
+        itemIndex: -1,
+        name: inv.vendor || 'Unknown item',
+        quantity: 1,
+        unitPrice: inv.total,
+        currentUnitValue: currentValue(inv.total, inv.date, inv.category),
+      },
+    ];
+  }
+  const items: ValuedItem[] = [];
+  inv.items.forEach((it, idx) => {
+    const qty = it.quantity > 0 ? it.quantity : 1;
+    const unit = it.unitPrice > 0 ? it.unitPrice : (it.totalPrice ?? 0) / qty;
+    if (unit <= 0) return;
+    items.push({
+      ...base,
+      itemIndex: idx,
+      name: it.name || 'Unnamed item',
+      quantity: qty,
+      unitPrice: unit,
+      currentUnitValue: currentValue(unit, inv.date, inv.category),
+    });
+  });
+  return items;
+}
+
 /**
  * Flattens insurable invoices into individual items.
  * Invoices without itemized lines become a single pseudo-item (the whole receipt),
@@ -78,48 +117,41 @@ export interface ValuedItem {
 export function getInsurableItems(invoices: Invoice[]): ValuedItem[] {
   const result: ValuedItem[] = [];
   for (const inv of getInsurableInvoices(invoices)) {
-    const base = {
-      invoiceId: inv.id,
-      vendor: inv.vendor,
-      date: inv.date,
-      room: inv.room ?? '',
-      category: inv.category,
-    };
-    if (inv.items.length === 0) {
-      if (inv.total > 0) {
-        result.push({
-          ...base,
-          itemIndex: -1,
-          name: inv.vendor || 'Unknown item',
-          quantity: 1,
-          unitPrice: inv.total,
-          currentUnitValue: currentValue(inv.total, inv.date, inv.category),
-        });
-      }
-      continue;
-    }
-    inv.items.forEach((it, idx) => {
-      const qty = it.quantity > 0 ? it.quantity : 1;
-      const unit = it.unitPrice > 0 ? it.unitPrice : (it.totalPrice ?? 0) / qty;
-      if (unit <= 0) return;
-      result.push({
-        ...base,
-        itemIndex: idx,
-        name: it.name || 'Unnamed item',
-        quantity: qty,
-        unitPrice: unit,
-        currentUnitValue: currentValue(unit, inv.date, inv.category),
-      });
-    });
+    result.push(...flattenInvoiceItems(inv));
   }
   return result;
 }
 
-/** Items whose per-unit purchase price meets the threshold, most expensive first. */
+/**
+ * Items whose per-unit purchase price meets the threshold, most expensive first.
+ * When an invoice has itemized lines but no single item meets the threshold,
+ * falls back to one whole-invoice entry if the invoice's total does — so a
+ * receipt made of several smaller items that add up to a lot still gets flagged,
+ * without double-counting invoices where an individual item already qualifies.
+ */
 export function getHighValueItems(invoices: Invoice[], threshold: number): ValuedItem[] {
-  return getInsurableItems(invoices)
-    .filter((it) => it.unitPrice >= threshold)
-    .sort((a, b) => b.unitPrice - a.unitPrice);
+  const result: ValuedItem[] = [];
+  for (const inv of getInsurableInvoices(invoices)) {
+    const items = flattenInvoiceItems(inv);
+    const qualifying = items.filter((it) => it.unitPrice >= threshold);
+    if (qualifying.length > 0) {
+      result.push(...qualifying);
+    } else if (inv.items.length > 0 && inv.total >= threshold) {
+      result.push({
+        invoiceId: inv.id,
+        itemIndex: -1,
+        name: inv.vendor || 'Unknown item',
+        vendor: inv.vendor,
+        date: inv.date,
+        room: inv.room ?? '',
+        category: inv.category,
+        quantity: 1,
+        unitPrice: inv.total,
+        currentUnitValue: currentValue(inv.total, inv.date, inv.category),
+      });
+    }
+  }
+  return result.sort((a, b) => b.unitPrice - a.unitPrice);
 }
 
 // ─── Summaries ───────────────────────────────────────────────────────────────
