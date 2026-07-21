@@ -10,6 +10,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import CameraScreen from './src/screens/CameraScreen';
 import ReviewScreen from './src/screens/ReviewScreen';
 import ManualEntryScreen from './src/screens/ManualEntryScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
 import InvoiceDetailScreen from './src/screens/InvoiceDetailScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import PaywallScreen from './src/screens/PaywallScreen';
@@ -20,6 +21,15 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 // Run before any component renders so DB tables exist when screens query them
 try { initDatabase(); } catch {}
 try { initNotifications(); } catch {}
+
+// Decided once, before mount — changing Stack.Navigator's initialRouteName after
+// mount has no effect, so this must not be a hook/state value. Guarded like the
+// initDatabase()/initNotifications() calls above: if the settings table isn't
+// ready, fail open to Home rather than crashing module evaluation.
+let initialRouteName: 'Home' | 'Onboarding' = 'Home';
+try {
+  initialRouteName = getSetting('hasSeenOnboarding', 'false') === 'true' ? 'Home' : 'Onboarding';
+} catch {}
 
 export default function App() {
   useEffect(() => {
@@ -50,13 +60,18 @@ export default function App() {
     <NavigationContainer>
       <StatusBar style="auto" />
       <Stack.Navigator
-        initialRouteName="Home"
+        initialRouteName={initialRouteName}
         screenOptions={{
           headerStyle: { backgroundColor: '#fff' },
           headerTintColor: '#111827',
           headerTitleStyle: { fontWeight: '700' },
         }}
       >
+        <Stack.Screen
+          name="Onboarding"
+          component={OnboardingScreen}
+          options={{ headerShown: false }}
+        />
         <Stack.Screen
           name="Home"
           component={HomeScreen}
