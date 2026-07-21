@@ -84,7 +84,6 @@ export default function SpotlightOverlay({ steps, onDone }: Props) {
       transparent
       visible
       animationType="none"
-      statusBarTranslucent
       onRequestClose={onDone}
     >
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
