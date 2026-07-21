@@ -211,6 +211,14 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Support</Text>
 
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Onboarding')}>
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>View Tutorial</Text>
+            <Text style={styles.rowSub}>See the welcome walkthrough again</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.row} onPress={handleFeedback}>
           <View style={styles.rowContent}>
             <Text style={styles.rowTitle}>Send Feedback</Text>
