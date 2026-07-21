@@ -279,6 +279,7 @@ export default function HomeScreen() {
   ];
 
   return (
+    <>
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Search + filter button */}
       <View style={styles.searchRow}>
@@ -620,8 +621,9 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
-      {showSpotlight && <SpotlightOverlay steps={spotlightSteps} onDone={finishSpotlight} />}
     </SafeAreaView>
+    {showSpotlight && <SpotlightOverlay steps={spotlightSteps} onDone={finishSpotlight} />}
+    </>
   );
 }
 
