@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal } from 'react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HOLE_PADDING = 8;
@@ -80,6 +80,13 @@ export default function SpotlightOverlay({ steps, onDone }: Props) {
   const tooltipBelow = spaceBelow > 180;
 
   return (
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onDone}
+    >
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/* 4-panel dark mask leaves a hole exactly around the target */}
       <View style={[styles.mask, { top: 0, left: 0, right: 0, height: Math.max(0, hole.top) }]} />
@@ -138,6 +145,7 @@ export default function SpotlightOverlay({ steps, onDone }: Props) {
         </View>
       </View>
     </View>
+    </Modal>
   );
 }
 
