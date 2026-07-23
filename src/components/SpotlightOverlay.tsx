@@ -26,15 +26,28 @@ interface Hole {
 export default function SpotlightOverlay({ steps, onDone }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [hole, setHole] = useState<Hole | null>(null);
+  // The overlay's own position in window coordinates. Targets are measured in
+  // the app window; the Modal may live in a window with a different origin
+  // (status bar handling differs between Expo Go, dev builds, edge-to-edge...).
+  // Measuring our own root and subtracting makes the math environment-proof.
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  const overlayRef = useRef<View>(null);
   const stepIndexRef = useRef(0);
 
   useEffect(() => {
+    if (!origin) return; // wait until our own coordinate origin is known
     stepIndexRef.current = stepIndex;
-    measureStep(stepIndex);
+    measureStep(stepIndex, origin);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepIndex]);
+  }, [stepIndex, origin]);
 
-  function measureStep(index: number) {
+  function handleOverlayLayout() {
+    overlayRef.current?.measureInWindow((x: number, y: number) => {
+      setOrigin((prev) => (prev && prev.x === x && prev.y === y ? prev : { x, y }));
+    });
+  }
+
+  function measureStep(index: number, o: { x: number; y: number }) {
     const step = steps[index];
     if (!step) {
       onDone();
@@ -54,8 +67,8 @@ export default function SpotlightOverlay({ steps, onDone }: Props) {
       const holeWidth = width + HOLE_PADDING * 2;
       const holeHeight = height + HOLE_PADDING * 2;
       setHole({
-        left: x - HOLE_PADDING,
-        top: y - HOLE_PADDING,
+        left: x - o.x - HOLE_PADDING,
+        top: y - o.y - HOLE_PADDING,
         width: holeWidth,
         height: holeHeight,
         radius: Math.min(holeWidth, holeHeight) / 2,
@@ -72,78 +85,89 @@ export default function SpotlightOverlay({ steps, onDone }: Props) {
     setStepIndex(index);
   }
 
-  if (!hole) return null;
-
   const step = steps[stepIndex];
-  const holeBottom = hole.top + hole.height;
-  const spaceBelow = SCREEN_HEIGHT - holeBottom;
-  const tooltipBelow = spaceBelow > 180;
+  const holeBottom = hole ? hole.top + hole.height : 0;
+  const tooltipBelow = hole ? SCREEN_HEIGHT - holeBottom > 180 : true;
 
+  // The Modal must render (empty) even before the first hole is measured, so
+  // the root View exists to be measured for `origin` via onLayout.
   return (
-    <Modal
-      transparent
-      visible
-      animationType="none"
-      onRequestClose={onDone}
-    >
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {/* 4-panel dark mask leaves a hole exactly around the target */}
-      <View style={[styles.mask, { top: 0, left: 0, right: 0, height: Math.max(0, hole.top) }]} />
-      <View style={[styles.mask, { top: holeBottom, left: 0, right: 0, bottom: 0 }]} />
+    <Modal transparent visible animationType="none" onRequestClose={onDone}>
       <View
-        style={[
-          styles.mask,
-          { top: hole.top, height: hole.height, left: 0, width: Math.max(0, hole.left) },
-        ]}
-      />
-      <View
-        style={[
-          styles.mask,
-          { top: hole.top, height: hole.height, left: hole.left + hole.width, right: 0 },
-        ]}
-      />
-
-      {/* Glowing outline around the hole */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.ring,
-          {
-            left: hole.left,
-            top: hole.top,
-            width: hole.width,
-            height: hole.height,
-            borderRadius: hole.radius,
-          },
-        ]}
-      />
-
-      {/* Tooltip, anchored below or above the hole depending on available space */}
-      <View
-        style={[
-          styles.tooltip,
-          tooltipBelow ? { top: holeBottom + 16 } : { bottom: SCREEN_HEIGHT - hole.top + 16 },
-        ]}
+        ref={overlayRef}
+        collapsable={false}
+        onLayout={handleOverlayLayout}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="box-none"
       >
-        <Text style={styles.stepCount}>
-          {stepIndex + 1} / {steps.length}
-        </Text>
-        <Text style={styles.title}>{step.title}</Text>
-        <Text style={styles.body}>{step.body}</Text>
-        <View style={styles.actions}>
-          <TouchableOpacity onPress={onDone} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={styles.skipText}>Skip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.nextBtn}
-            onPress={() => goToStep(stepIndex + 1)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.nextText}>{stepIndex + 1 >= steps.length ? 'Got it' : 'Next'}</Text>
-          </TouchableOpacity>
-        </View>
+        {hole && step && (
+          <>
+            {/* 4-panel dark mask leaves a hole exactly around the target */}
+            <View
+              style={[styles.mask, { top: 0, left: 0, right: 0, height: Math.max(0, hole.top) }]}
+            />
+            <View style={[styles.mask, { top: holeBottom, left: 0, right: 0, bottom: 0 }]} />
+            <View
+              style={[
+                styles.mask,
+                { top: hole.top, height: hole.height, left: 0, width: Math.max(0, hole.left) },
+              ]}
+            />
+            <View
+              style={[
+                styles.mask,
+                { top: hole.top, height: hole.height, left: hole.left + hole.width, right: 0 },
+              ]}
+            />
+
+            {/* Glowing outline around the hole */}
+            <View
+              pointerEvents="none"
+              style={[
+                styles.ring,
+                {
+                  left: hole.left,
+                  top: hole.top,
+                  width: hole.width,
+                  height: hole.height,
+                  borderRadius: hole.radius,
+                },
+              ]}
+            />
+
+            {/* Tooltip, anchored below or above the hole depending on available space */}
+            <View
+              style={[
+                styles.tooltip,
+                tooltipBelow ? { top: holeBottom + 16 } : { bottom: SCREEN_HEIGHT - hole.top + 16 },
+              ]}
+            >
+              <Text style={styles.stepCount}>
+                {stepIndex + 1} / {steps.length}
+              </Text>
+              <Text style={styles.title}>{step.title}</Text>
+              <Text style={styles.body}>{step.body}</Text>
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  onPress={onDone}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={styles.skipText}>Skip</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.nextBtn}
+                  onPress={() => goToStep(stepIndex + 1)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.nextText}>
+                    {stepIndex + 1 >= steps.length ? 'Got it' : 'Next'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
       </View>
-    </View>
     </Modal>
   );
 }
