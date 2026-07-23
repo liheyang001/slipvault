@@ -76,7 +76,8 @@
         {
           "photosPermission": "Slipvault saves invoice photos to your library."
         }
-      ]
+      ],
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "privacyPolicyUrl": "https://invoice-reader-privacy.pages.dev/privacy-policy.html",
