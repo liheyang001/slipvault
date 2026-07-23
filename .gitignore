@@ -51,3 +51,4 @@ skills.md
 # Build output
 pages-dist/
 dist/
+.metro.log
