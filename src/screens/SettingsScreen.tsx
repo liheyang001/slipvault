@@ -23,6 +23,7 @@ import {
 } from '../services/database';
 import { scheduleMonthlyReminder, cancelScheduledNotification } from '../services/notifications';
 import { createBackup, restoreBackup } from '../services/backup';
+import { getStoredUser, signInWithGoogle, signOutGoogle, type AuthUser } from '../services/auth';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
 
@@ -33,14 +34,16 @@ export default function SettingsScreen() {
   const [monthlyEnabled, setMonthlyEnabled] = useState(false);
   const [pro, setPro] = useState(false);
   const [invoiceCount, setInvoiceCount] = useState(0);
-  const [busy, setBusy] = useState<'backup' | 'restore' | null>(null);
+  const [busy, setBusy] = useState<'backup' | 'restore' | 'signin' | null>(null);
   const [lastBackup, setLastBackup] = useState('');
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
     setMonthlyEnabled(getSetting('monthlyNotif', 'false') === 'true');
     setPro(isProUser());
     setInvoiceCount(getInvoiceCount());
     setLastBackup(getSetting('lastBackupAt', ''));
+    setUser(getStoredUser());
   }, []);
 
   function formatBackupDate(iso: string): string {
@@ -137,8 +140,71 @@ export default function SettingsScreen() {
     }
   }
 
+  async function handleSignIn() {
+    if (busy) return; // double-tap guard: a second signIn() rejects with IN_PROGRESS
+    setBusy('signin');
+    try {
+      const signedIn = await signInWithGoogle();
+      if (signedIn) setUser(signedIn);
+    } catch {
+      Alert.alert('Sign-in failed', 'Please check your connection and try again.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function handleSignOut() {
+    Alert.alert('Sign out', 'Your invoices stay on this device. Sign out of Google?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          await signOutGoogle();
+          setUser(null);
+        },
+      },
+    ]);
+  }
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Account */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Account</Text>
+        {!user ? (
+          <TouchableOpacity
+            style={styles.row}
+            onPress={handleSignIn}
+            disabled={busy !== null}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowContent}>
+              <Text style={styles.rowTitle}>Sign in with Google</Text>
+              <Text style={styles.rowSub}>
+                Back up your identity for future cross-device features
+              </Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            <View style={styles.row}>
+              <View style={styles.rowContent}>
+                <Text style={styles.rowTitle}>{user.email}</Text>
+                <Text style={styles.rowSub}>Signed in with Google</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.row} onPress={handleSignOut} activeOpacity={0.7}>
+              <View style={styles.rowContent}>
+                <Text style={styles.rowTitle}>Sign out</Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
       {/* Pro / plan */}
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Plan</Text>
