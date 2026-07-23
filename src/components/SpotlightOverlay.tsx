@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HOLE_PADDING = 8;
@@ -26,10 +26,11 @@ interface Hole {
 export default function SpotlightOverlay({ steps, onDone }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [hole, setHole] = useState<Hole | null>(null);
-  // The overlay's own position in window coordinates. Targets are measured in
-  // the app window; the Modal may live in a window with a different origin
-  // (status bar handling differs between Expo Go, dev builds, edge-to-edge...).
-  // Measuring our own root and subtracting makes the math environment-proof.
+  // The overlay's own position in window coordinates. It renders in the SAME
+  // window as the targets (deliberately NOT in a Modal — a Modal is a separate
+  // native window with its own coordinate origin, making cross-window math
+  // impossible), so subtracting our measured origin from each target's
+  // measurement is exact in any environment.
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
   const overlayRef = useRef<View>(null);
   const stepIndexRef = useRef(0);
@@ -89,15 +90,15 @@ export default function SpotlightOverlay({ steps, onDone }: Props) {
   const holeBottom = hole ? hole.top + hole.height : 0;
   const tooltipBelow = hole ? SCREEN_HEIGHT - holeBottom > 180 : true;
 
-  // The Modal must render (empty) even before the first hole is measured, so
-  // the root View exists to be measured for `origin` via onLayout.
+  // The root must render (empty) even before the first hole is measured, so
+  // it exists to be measured for `origin` via onLayout. zIndex + elevation
+  // lift it above everything on screen, including the FAB (elevation 10).
   return (
-    <Modal transparent visible animationType="none" onRequestClose={onDone}>
       <View
         ref={overlayRef}
         collapsable={false}
         onLayout={handleOverlayLayout}
-        style={StyleSheet.absoluteFill}
+        style={[StyleSheet.absoluteFill, styles.root]}
         pointerEvents="box-none"
       >
         {hole && step && (
@@ -168,12 +169,12 @@ export default function SpotlightOverlay({ steps, onDone }: Props) {
           </>
         )}
       </View>
-    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  mask: { position: 'absolute', backgroundColor: 'rgba(15,23,42,0.8)' },
+  root: { zIndex: 1000, elevation: 30 },
+  mask: { position: 'absolute', backgroundColor: 'rgba(15,23,42,0.8)', elevation: 30 },
   ring: {
     position: 'absolute',
     borderWidth: 3,
