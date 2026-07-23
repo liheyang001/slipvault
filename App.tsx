@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initDatabase, getSetting, setSetting, getAllInvoices } from './src/services/database';
 import { initNotifications, cancelScheduledNotification, scheduleMonthlyReminder } from './src/services/notifications';
+import { configureAuth } from './src/services/auth';
 import { RootStackParamList } from './src/types/navigation';
 import HomeScreen from './src/screens/HomeScreen';
 import CameraScreen from './src/screens/CameraScreen';
@@ -21,6 +22,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 // Run before any component renders so DB tables exist when screens query them
 try { initDatabase(); } catch {}
 try { initNotifications(); } catch {}
+try { configureAuth(); } catch {}
 
 // Decided once, before mount — changing Stack.Navigator's initialRouteName after
 // mount has no effect, so this must not be a hook/state value. Guarded like the
