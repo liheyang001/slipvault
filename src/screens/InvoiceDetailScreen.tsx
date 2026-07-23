@@ -27,6 +27,7 @@ import { Invoice } from '../types/invoice';
 import { RootStackParamList } from '../types/navigation';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
 import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
+import { exclFromIncl, inclFromExcl } from '../utils/tax';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -363,6 +364,19 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     ]);
   }
 
+  // Keep Excl./Incl. GST in sync while editing (NZ 15% GST); either field can drive the other.
+  function handleTotalChange(text: string) {
+    setEditTotal(text);
+    const n = parseFloat(text);
+    if (Number.isFinite(n)) setEditSubtotal(exclFromIncl(n).toFixed(2));
+  }
+
+  function handleSubtotalChange(text: string) {
+    setEditSubtotal(text);
+    const n = parseFloat(text);
+    if (Number.isFinite(n)) setEditTotal(inclFromExcl(n).toFixed(2));
+  }
+
   function handleRemoveItemPhoto(uri: string) {
     if (!invoice) return;
     Alert.alert('Remove Photo', 'Remove this item photo?', [
@@ -630,7 +644,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
               <View style={styles.gstCol}>
                 <Text style={styles.label}>Excl. GST</Text>
                 {isEditing ? (
-                  <TextInput style={styles.input} value={editSubtotal} onChangeText={setEditSubtotal}
+                  <TextInput style={styles.input} value={editSubtotal} onChangeText={handleSubtotalChange}
                     keyboardType="decimal-pad" placeholder="0.00" />
                 ) : (
                   <Text style={styles.value}>${invoice.subtotal.toFixed(2)}</Text>
@@ -640,7 +654,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.label}>Incl. GST</Text>
                 {isEditing ? (
                   <TextInput style={[styles.input, styles.totalInput]} value={editTotal}
-                    onChangeText={setEditTotal} keyboardType="decimal-pad" placeholder="0.00" />
+                    onChangeText={handleTotalChange} keyboardType="decimal-pad" placeholder="0.00" />
                 ) : (
                   <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
                 )}
