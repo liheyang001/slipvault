@@ -1,0 +1,7 @@
+{
+  "name": "invoice-reader-proxy",
+  "private": true,
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}
