@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
-import { extractInvoiceData, ExtractedInvoiceData } from '../services/claude';
+import { extractInvoiceData, ExtractedInvoiceData, InsufficientCreditsError } from '../services/claude';
 import { processInvoiceImage } from '../services/imageProcessor';
 import { insertInvoice, findDuplicateInvoice, updateInvoice, getUserRooms, saveUserRoom } from '../services/database';
 import { scheduleWarrantyReminder } from '../services/notifications';
@@ -36,6 +36,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedInvoiceData | null>(null);
   const [networkError, setNetworkError] = useState(false);
+  const [outOfCredits, setOutOfCredits] = useState(false);
 
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState('');
@@ -77,6 +78,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
   async function runExtraction() {
     setLoading(true);
     setNetworkError(false);
+    setOutOfCredits(false);
     startProgress();
 
     try {
@@ -103,9 +105,13 @@ export default function ReviewScreen({ route, navigation }: Props) {
       }
 
       applyExtracted(data);
-    } catch {
+    } catch (err) {
       finishProgress();
-      setNetworkError(true);
+      if (err instanceof InsufficientCreditsError) {
+        setOutOfCredits(true);
+      } else {
+        setNetworkError(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -231,6 +237,20 @@ export default function ReviewScreen({ route, navigation }: Props) {
               <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
             </View>
             <Text style={styles.loadingText}>Analyzing invoice...</Text>
+          </View>
+        )}
+
+        {/* Out of credits */}
+        {!loading && outOfCredits && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Out of credits</Text>
+            <Text style={styles.errorSub}>
+              You're out of scan credits. The photo has been saved locally — analyze it later once
+              you have more.
+            </Text>
+            <TouchableOpacity style={styles.laterBtn} onPress={handleSaveForLater}>
+              <Text style={styles.laterBtnText}>Save for Later</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -380,7 +400,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
             <Text style={styles.retakeBtnText}>Retake</Text>
           </TouchableOpacity>
 
-          {!networkError && (
+          {!networkError && !outOfCredits && (
             <TouchableOpacity
               style={[styles.saveBtn, (!extracted || saving) && styles.saveBtnDisabled]}
               onPress={handleSave}
