@@ -42,6 +42,7 @@ import InsuranceScreen, { ValuationState } from './InsuranceScreen';
 import { capitalize } from '../utils/categories';
 import { capitalizeRoom } from '../utils/rooms';
 import { exportCSV, exportPDF, exportRoomCSV, exportRoomPDF } from '../services/exporter';
+import { getStoredUser } from '../services/auth';
 
 const VIEW_ORDER: Record<ToggleView, number> = { invoices: 0, rooms: 1, insurance: 2 };
 const VIEWS: ToggleView[] = ['invoices', 'rooms', 'insurance'];
@@ -64,6 +65,7 @@ export default function HomeScreen() {
   const [quota, setQuota] = useState<{ pro: boolean; count: number }>({ pro: true, count: 0 });
   const [backupNudge, setBackupNudge] = useState('');
   const [backingUp, setBackingUp] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
 
   // View switching: fixed header, native pager below (both pages visible while sliding)
   const [view, setView] = useState<ToggleView>('invoices');
@@ -168,6 +170,7 @@ export default function HomeScreen() {
       setCategoryUsage(getCategoryUsage());
       const totalCount = getInvoiceCount();
       setQuota({ pro: isProUser(), count: totalCount });
+      setUserEmail(getStoredUser()?.email ?? '');
 
       // Backup nudge: never backed up (≥5 invoices), stale (>30 days), or 10+ new since
       let nudge = '';
@@ -293,6 +296,20 @@ export default function HomeScreen() {
   return (
     <>
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      {/* Signed-in indicator */}
+      {!!userEmail && (
+        <TouchableOpacity
+          style={styles.accountRow}
+          onPress={() => navigation.navigate('Settings')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="person-circle-outline" size={14} color="#94a3b8" />
+          <Text style={styles.accountText} numberOfLines={1}>
+            {userEmail}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {/* Search + filter button */}
       <View style={styles.searchRow}>
         <TextInput
@@ -661,6 +678,17 @@ const styles = StyleSheet.create({
   },
   barBtnText: { fontSize: 14, fontWeight: '600', color: '#475569' },
   barDivider: { width: 1, height: 24, backgroundColor: '#f1f5f9' },
+
+  // Signed-in indicator
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    backgroundColor: '#fff',
+  },
+  accountText: { fontSize: 12, color: '#94a3b8', fontWeight: '500' },
 
   // Search bar
   searchRow: {
