@@ -1,4 +1,5 @@
 import { InvoiceItem } from '../types/invoice';
+import { getIdToken } from './auth';
 
 export interface ExtractedInvoiceData {
   isInvoice: boolean;
@@ -11,17 +12,29 @@ export interface ExtractedInvoiceData {
   category: string;
 }
 
+/** Thrown by extractInvoiceData when the Worker reports a 402 (out of credits). */
+export class InsufficientCreditsError extends Error {
+  constructor(public balance: number) {
+    super('Out of scan credits.');
+    this.name = 'InsufficientCreditsError';
+  }
+}
+
 const FALLBACK_PROXY_URL = 'https://invoice-reader-proxy.womendemiao.workers.dev';
 
 function getProxyUrl(): string {
   return process.env.EXPO_PUBLIC_AI_PROXY_URL || FALLBACK_PROXY_URL;
 }
 
-function buildHeaders(): Record<string, string> {
+async function buildHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   // Matches the worker's APP_SECRET when configured (light abuse protection).
   if (process.env.EXPO_PUBLIC_APP_KEY) {
     headers['X-App-Key'] = process.env.EXPO_PUBLIC_APP_KEY;
+  }
+  const idToken = await getIdToken();
+  if (idToken) {
+    headers['Authorization'] = `Bearer ${idToken}`;
   }
   return headers;
 }
@@ -44,7 +57,7 @@ export interface AIEstimate {
 export async function estimateItemValues(items: ValuationInput[]): Promise<AIEstimate[]> {
   const response = await fetch(getProxyUrl(), {
     method: 'POST',
-    headers: buildHeaders(),
+    headers: await buildHeaders(),
     body: JSON.stringify({ action: 'valuate', items }),
   });
 
@@ -67,9 +80,14 @@ export async function extractInvoiceData(
 ): Promise<ExtractedInvoiceData> {
   const response = await fetch(getProxyUrl(), {
     method: 'POST',
-    headers: buildHeaders(),
+    headers: await buildHeaders(),
     body: JSON.stringify({ imageBase64, mimeType: 'image/jpeg' }),
   });
+
+  if (response.status === 402) {
+    const body = await response.json().catch(() => ({ balance: 0 }));
+    throw new InsufficientCreditsError(Number(body.balance) || 0);
+  }
 
   if (!response.ok) {
     throw new Error(`Recognition service failed (${response.status}). Check your network connection and try again.`);
@@ -86,4 +104,39 @@ export async function extractInvoiceData(
   }
 
   return data;
+}
+
+export interface CreditBalance {
+  balance: number;
+}
+
+/** Current credit balance for the signed-in user. */
+export async function getCreditBalance(): Promise<number> {
+  const response = await fetch(getProxyUrl(), {
+    method: 'POST',
+    headers: await buildHeaders(),
+    body: JSON.stringify({ action: 'credits_balance' }),
+  });
+  if (!response.ok) {
+    throw new Error(`Could not fetch credit balance (${response.status}).`);
+  }
+  const data = (await response.json()) as CreditBalance;
+  return data.balance;
+}
+
+/**
+ * Dev-only stand-in for a real purchase — adds credits directly via the
+ * Worker's credits_dev_topup action. Delete this once RevenueCat ships.
+ */
+export async function devTopUpCredits(amount: number): Promise<number> {
+  const response = await fetch(getProxyUrl(), {
+    method: 'POST',
+    headers: await buildHeaders(),
+    body: JSON.stringify({ action: 'credits_dev_topup', amount }),
+  });
+  if (!response.ok) {
+    throw new Error(`Top-up failed (${response.status}).`);
+  }
+  const data = (await response.json()) as CreditBalance;
+  return data.balance;
 }
