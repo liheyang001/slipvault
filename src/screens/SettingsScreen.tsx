@@ -24,6 +24,7 @@ import {
 import { scheduleMonthlyReminder, cancelScheduledNotification } from '../services/notifications';
 import { createBackup, restoreBackup } from '../services/backup';
 import { getStoredUser, signInWithGoogle, signOutGoogle, type AuthUser } from '../services/auth';
+import { devTopUpCredits } from '../services/claude';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
 
@@ -167,6 +168,15 @@ export default function SettingsScreen() {
     ]);
   }
 
+  async function handleDevTopUp() {
+    try {
+      const balance = await devTopUpCredits(20);
+      Alert.alert('Credits added', `New balance: ${balance}`);
+    } catch {
+      Alert.alert('Top-up failed', 'Please try again.');
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Account */}
@@ -195,6 +205,15 @@ export default function SettingsScreen() {
                 <Text style={styles.rowSub}>Signed in with Google</Text>
               </View>
             </View>
+            {__DEV__ && (
+              <TouchableOpacity style={styles.row} onPress={handleDevTopUp} activeOpacity={0.7}>
+                <View style={styles.rowContent}>
+                  <Text style={styles.rowTitle}>+20 credits (dev)</Text>
+                  <Text style={styles.rowSub}>Testing only — stands in for a real purchase</Text>
+                </View>
+                <Text style={styles.chevron}>›</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.row} onPress={handleSignOut} activeOpacity={0.7}>
               <View style={styles.rowContent}>
                 <Text style={styles.rowTitle}>Sign out</Text>
