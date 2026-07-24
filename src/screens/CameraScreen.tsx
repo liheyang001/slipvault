@@ -15,7 +15,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { processInvoiceImage, isImageBlurry } from '../services/imageProcessor';
-import { isProUser, getInvoiceCount, FREE_INVOICE_LIMIT } from '../services/database';
+import { getStoredUser, signInWithGoogle } from '../services/auth';
 import * as FileSystem from 'expo-file-system/legacy';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Camera'>;
@@ -55,19 +55,18 @@ export default function CameraScreen() {
     return destUri;
   }
 
-  /** Free plan gate. Returns true when another invoice may be added. */
-  function checkQuota(pendingInQueue: number): boolean {
-    if (isProUser()) return true;
-    if (getInvoiceCount() + pendingInQueue < FREE_INVOICE_LIMIT) return true;
-    Alert.alert(
-      'Free limit reached',
-      `The free plan stores up to ${FREE_INVOICE_LIMIT} invoices. Upgrade to Pro for unlimited invoices — your existing ones always stay accessible.`,
-      [
-        { text: 'Not now', style: 'cancel' },
-        { text: 'See Pro', onPress: () => navigation.navigate('Paywall') },
-      ]
-    );
-    return false;
+  /** Scanning requires a signed-in identity (the credit ledger is keyed to it).
+   * Prompts inline if not signed in; returns false if the user cancels or the
+   * sign-in attempt fails, in which case the caller must not proceed. */
+  async function ensureSignedIn(): Promise<boolean> {
+    if (getStoredUser()) return true;
+    try {
+      const user = await signInWithGoogle();
+      return user !== null;
+    } catch {
+      Alert.alert('Sign-in failed', 'Please check your connection and try again.');
+      return false;
+    }
   }
 
   async function addToQueue(uri: string) {
@@ -97,9 +96,9 @@ export default function CameraScreen() {
 
   async function handleCapture() {
     if (!cameraRef.current || capturing) return;
-    if (!checkQuota(queue.length)) return;
     setCapturing(true);
     try {
+      if (!(await ensureSignedIn())) return;
       const photo = await cameraRef.current.takePictureAsync({ base64: false });
       if (photo) await addToQueue(photo.uri);
     } catch {
@@ -116,24 +115,11 @@ export default function CameraScreen() {
       quality: 1,
     });
     if (result.canceled || result.assets.length === 0) return;
-
-    // Free plan: only take as many as the remaining slots allow.
-    let assets = result.assets;
-    if (!isProUser()) {
-      const remaining = Math.max(0, FREE_INVOICE_LIMIT - getInvoiceCount() - queue.length);
-      if (!checkQuota(queue.length)) return; // 0 slots → paywall prompt
-      if (assets.length > remaining) {
-        Alert.alert(
-          'Free limit',
-          `Only ${remaining} free slot${remaining !== 1 ? 's' : ''} left — importing the first ${remaining} photo${remaining !== 1 ? 's' : ''}. Upgrade to Pro for unlimited invoices.`
-        );
-        assets = assets.slice(0, remaining);
-      }
-    }
+    if (!(await ensureSignedIn())) return;
 
     setCapturing(true);
     try {
-      for (const asset of assets) {
+      for (const asset of result.assets) {
         await addToQueue(asset.uri);
       }
     } finally {
