@@ -1,16 +1,25 @@
 /**
- * Cloudflare Worker: Gemini API proxy
+ * Cloudflare Worker: Gemini API proxy + credit ledger
  *
  * Deploy steps:
  * 1. npm install -g wrangler
  * 2. wrangler login
- * 3. wrangler secret put GEMINI_API_KEY   (paste your Gemini key when prompted)
- * 4. wrangler deploy
- * 5. Copy the deployed URL into the app's .env: EXPO_PUBLIC_AI_PROXY_URL=https://xxx.workers.dev
+ * 3. wrangler secret put GEMINI_API_KEY        (paste your Gemini key when prompted)
+ * 4. wrangler secret put GOOGLE_WEB_CLIENT_ID  (the Web OAuth client ID from Google Cloud Console)
+ * 5. wrangler deploy
+ * 6. Copy the deployed URL into the app's .env: EXPO_PUBLIC_AI_PROXY_URL=https://xxx.workers.dev
+ *
+ * D1 setup (one-time, see docs/superpowers/plans/2026-07-24-credit-ledger.md
+ * Tasks 1-2): wrangler d1 create + bind in wrangler.toml + apply schema.sql.
  */
+
+import { jwtVerify, createRemoteJWKSet } from 'jose';
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+const GOOGLE_JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
+const SIGNUP_CREDITS = 20;
 
 const PROMPT = `Analyze this image and extract invoice/receipt data.
 
@@ -54,6 +63,94 @@ Items:
 ${JSON.stringify(items)}`;
 }
 
+// ─── Identity ────────────────────────────────────────────────────────────
+
+/** Verifies the Authorization: Bearer <Google idToken> header. Returns {sub, email} or throws. */
+async function verifyIdToken(request, env) {
+  if (!env.GOOGLE_WEB_CLIENT_ID) {
+    // Fail closed: without a configured audience, jwtVerify would skip the
+    // audience check entirely and accept a token minted for ANY Google OAuth
+    // client, not just this app.
+    throw new Error('Worker misconfigured: GOOGLE_WEB_CLIENT_ID not set');
+  }
+  const auth = request.headers.get('authorization') || '';
+  const match = auth.match(/^Bearer (.+)$/i);
+  if (!match) {
+    throw new Error('Missing bearer token');
+  }
+  const { payload } = await jwtVerify(match[1], GOOGLE_JWKS, {
+    issuer: ['https://accounts.google.com', 'accounts.google.com'],
+    audience: env.GOOGLE_WEB_CLIENT_ID,
+  });
+  if (!payload.sub || !payload.email) {
+    throw new Error('Token missing sub/email');
+  }
+  return { sub: payload.sub, email: payload.email };
+}
+
+// ─── Credit ledger (D1) ──────────────────────────────────────────────────
+
+/** Ensures a credits row exists for this user, bootstrapping to SIGNUP_CREDITS if new. */
+async function ensureUser(env, userId, email) {
+  const now = new Date().toISOString();
+  // Batched (one transaction): the log insert only fires if the INSERT OR
+  // IGNORE actually created a row, via SQLite's changes() referring to the
+  // immediately-preceding statement in this same batch/transaction.
+  await env.DB.batch([
+    env.DB.prepare(
+      'INSERT OR IGNORE INTO credits (user_id, email, balance, updated_at) VALUES (?, ?, ?, ?)'
+    ).bind(userId, email, SIGNUP_CREDITS, now),
+    env.DB.prepare(
+      "INSERT INTO credit_log (user_id, delta, reason, created_at) SELECT ?, ?, 'signup', ? WHERE changes() = 1"
+    ).bind(userId, SIGNUP_CREDITS, now),
+  ]);
+}
+
+async function getBalance(env, userId) {
+  const row = await env.DB.prepare('SELECT balance FROM credits WHERE user_id = ?')
+    .bind(userId)
+    .first();
+  return row ? row.balance : 0;
+}
+
+/** Atomically spends 1 credit. Returns true if it succeeded (balance was >= 1). */
+async function spendCredit(env, userId) {
+  const now = new Date().toISOString();
+  const [updateResult] = await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE credits SET balance = balance - 1, updated_at = ? WHERE user_id = ? AND balance >= 1'
+    ).bind(now, userId),
+    env.DB.prepare(
+      "INSERT INTO credit_log (user_id, delta, reason, created_at) SELECT ?, -1, 'scan', ? WHERE changes() = 1"
+    ).bind(userId, now),
+  ]);
+  return updateResult.meta.changes === 1;
+}
+
+async function refundCredit(env, userId) {
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE credits SET balance = balance + 1, updated_at = ? WHERE user_id = ?'
+    ).bind(now, userId),
+    env.DB.prepare(
+      "INSERT INTO credit_log (user_id, delta, reason, created_at) VALUES (?, 1, 'scan_refund', ?)"
+    ).bind(userId, now),
+  ]);
+}
+
+async function addCredits(env, userId, amount) {
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE credits SET balance = balance + ?, updated_at = ? WHERE user_id = ?'
+    ).bind(amount, now, userId),
+    env.DB.prepare(
+      "INSERT INTO credit_log (user_id, delta, reason, created_at) VALUES (?, ?, 'dev_topup', ?)"
+    ).bind(userId, amount, now),
+  ]);
+}
+
 export default {
   async fetch(request, env) {
     // CORS 预检
@@ -62,7 +159,7 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-App-Key',
         },
       });
     }
@@ -85,6 +182,7 @@ export default {
     }
 
     // ─── Action: valuate (AI depreciation for contents insurance) ───────────
+    // Unchanged: no identity or credit requirement.
     if (body.action === 'valuate') {
       const items = body.items;
       if (!Array.isArray(items) || items.length === 0 || items.length > 40) {
@@ -119,10 +217,68 @@ export default {
       });
     }
 
-    // ─── Default action: invoice extraction from photo ──────────────────────
+    // ─── Action: credits_balance ─────────────────────────────────────────
+    if (body.action === 'credits_balance') {
+      let identity;
+      try {
+        identity = await verifyIdToken(request, env);
+      } catch {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      await ensureUser(env, identity.sub, identity.email);
+      const balance = await getBalance(env, identity.sub);
+      return new Response(JSON.stringify({ balance }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    // ─── Action: credits_dev_topup ───────────────────────────────────────
+    // Interim stand-in for a real purchase (RevenueCat webhook). DELETE THIS
+    // ACTION once RevenueCat purchases are wired up — it lets anyone with a
+    // valid Google account and the app secret give themselves free credits.
+    if (body.action === 'credits_dev_topup') {
+      if (!env.APP_SECRET || request.headers.get('x-app-key') !== env.APP_SECRET) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      let identity;
+      try {
+        identity = await verifyIdToken(request, env);
+      } catch {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      const amount = Number(body.amount);
+      if (!Number.isInteger(amount) || amount <= 0 || amount > 1000) {
+        return new Response('amount must be an integer between 1 and 1000', { status: 400 });
+      }
+      await ensureUser(env, identity.sub, identity.email);
+      await addCredits(env, identity.sub, amount);
+      const balance = await getBalance(env, identity.sub);
+      return new Response(JSON.stringify({ balance }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    // ─── Default action: invoice extraction from photo (credit-gated) ─────
     const { imageBase64, mimeType = 'image/jpeg' } = body;
     if (!imageBase64) {
       return new Response('Missing imageBase64', { status: 400 });
+    }
+
+    let identity;
+    try {
+      identity = await verifyIdToken(request, env);
+    } catch {
+      return new Response('Unauthorized', { status: 401 });
+    }
+
+    await ensureUser(env, identity.sub, identity.email);
+    const spent = await spendCredit(env, identity.sub);
+    if (!spent) {
+      const balance = await getBalance(env, identity.sub);
+      return new Response(JSON.stringify({ error: 'insufficient_credits', balance }), {
+        status: 402,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
     }
 
     const geminiPayload = {
@@ -136,19 +292,37 @@ export default {
       ],
     };
 
-    const geminiRes = await fetch(GEMINI_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-      body: JSON.stringify(geminiPayload),
-    });
+    let geminiRes;
+    try {
+      geminiRes = await fetch(GEMINI_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+        body: JSON.stringify(geminiPayload),
+      });
+    } catch (err) {
+      await refundCredit(env, identity.sub);
+      return new Response(`Gemini request failed: ${err.message}`, { status: 502 });
+    }
 
     if (!geminiRes.ok) {
+      await refundCredit(env, identity.sub);
       const errText = await geminiRes.text();
       return new Response(`Gemini error: ${errText}`, { status: geminiRes.status });
     }
 
-    const geminiData = await geminiRes.json();
+    let geminiData;
+    try {
+      geminiData = await geminiRes.json();
+    } catch (err) {
+      await refundCredit(env, identity.sub);
+      return new Response(`Gemini returned an unreadable response: ${err.message}`, { status: 502 });
+    }
+
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    if (!text) {
+      await refundCredit(env, identity.sub);
+      return new Response('Gemini returned no usable content', { status: 502 });
+    }
     const json = text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
 
     return new Response(json, {
