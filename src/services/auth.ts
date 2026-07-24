@@ -77,3 +77,20 @@ export async function signOutGoogle(): Promise<void> {
   } catch {}
   setSetting('authUser', '');
 }
+
+/**
+ * A fresh Google ID token for the currently signed-in user, or null if not
+ * signed in. Never throws — mirrors signInWithGoogle's cancel-never-throws
+ * contract, since callers use this to silently decide whether to prompt for
+ * sign-in rather than to hard-fail.
+ */
+export async function getIdToken(): Promise<string | null> {
+  if (!getStoredUser()) return null;
+  try {
+    const { GoogleSignin } = sdk();
+    const tokens = await GoogleSignin.getTokens();
+    return tokens.idToken ?? null;
+  } catch {
+    return null;
+  }
+}
