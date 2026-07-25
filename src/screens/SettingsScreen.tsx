@@ -171,6 +171,7 @@ export default function SettingsScreen() {
         onPress: async () => {
           await signOutGoogle();
           setUser(null);
+          setBalance(null);
         },
       },
     ]);
