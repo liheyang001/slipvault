@@ -242,14 +242,28 @@ export default function ReviewScreen({ route, navigation }: Props) {
 
         {/* Out of credits */}
         {!loading && outOfCredits && (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorTitle}>Out of credits</Text>
-            <Text style={styles.errorSub}>
-              You're out of scan credits. The photo has been saved locally — analyze it later once
-              you have more.
+          <View style={styles.creditsBox}>
+            <View style={styles.creditsIcon}>
+              <Text style={styles.creditsIconGlyph}>🪙</Text>
+            </View>
+            <Text style={styles.creditsTitle}>Out of scan credits</Text>
+            <Text style={styles.creditsSub}>
+              Your photo is safe. Get more credits to extract it automatically, or save it for
+              later.
             </Text>
-            <TouchableOpacity style={styles.laterBtn} onPress={handleSaveForLater}>
-              <Text style={styles.laterBtnText}>Save for Later</Text>
+            <TouchableOpacity
+              style={styles.creditsPrimaryBtn}
+              onPress={() => navigation.navigate('Paywall')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.creditsPrimaryText}>Get more credits</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.creditsGhostBtn}
+              onPress={handleSaveForLater}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.creditsGhostText}>Save for later</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -468,6 +482,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   laterBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  creditsBox: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  creditsIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  creditsIconGlyph: { fontSize: 24 },
+  creditsTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  creditsSub: {
+    fontSize: 13,
+    color: '#64748b',
+    lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  creditsPrimaryBtn: {
+    alignSelf: 'stretch',
+    backgroundColor: '#2563eb',
+    paddingVertical: 12,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  creditsPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  creditsGhostBtn: {
+    alignSelf: 'stretch',
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  creditsGhostText: { color: '#64748b', fontWeight: '600', fontSize: 13 },
 
   section: {
     backgroundColor: '#fff',
