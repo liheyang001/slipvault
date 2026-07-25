@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,21 +10,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
-import {
-  getSetting,
-  setSetting,
-  getAllInvoices,
-  isProUser,
-  getInvoiceCount,
-  FREE_INVOICE_LIMIT,
-} from '../services/database';
+import { getSetting, setSetting, getAllInvoices } from '../services/database';
 import { scheduleMonthlyReminder, cancelScheduledNotification } from '../services/notifications';
 import { createBackup, restoreBackup } from '../services/backup';
 import { getStoredUser, signInWithGoogle, signOutGoogle, type AuthUser } from '../services/auth';
-import { devTopUpCredits } from '../services/claude';
+import { devTopUpCredits, getCreditBalance } from '../services/claude';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
 
@@ -33,19 +26,35 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 export default function SettingsScreen() {
   const navigation = useNavigation<Nav>();
   const [monthlyEnabled, setMonthlyEnabled] = useState(false);
-  const [pro, setPro] = useState(false);
-  const [invoiceCount, setInvoiceCount] = useState(0);
   const [busy, setBusy] = useState<'backup' | 'restore' | 'signin' | null>(null);
   const [lastBackup, setLastBackup] = useState('');
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
     setMonthlyEnabled(getSetting('monthlyNotif', 'false') === 'true');
-    setPro(isProUser());
-    setInvoiceCount(getInvoiceCount());
     setLastBackup(getSetting('lastBackupAt', ''));
     setUser(getStoredUser());
   }, []);
+
+  // Refresh the balance whenever the screen gains focus (e.g. returning from
+  // a scan or the Paywall). Balance is auxiliary info: failures show "—", never an alert.
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      let cancelled = false;
+      getCreditBalance()
+        .then((b) => {
+          if (!cancelled) setBalance(b);
+        })
+        .catch(() => {
+          if (!cancelled) setBalance(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [user])
+  );
 
   function formatBackupDate(iso: string): string {
     const t = Date.parse(iso);
@@ -110,7 +119,6 @@ export default function SettingsScreen() {
             try {
               const result = await restoreBackup();
               if (result) {
-                setInvoiceCount(getInvoiceCount());
                 Alert.alert(
                   'Restore complete',
                   `${result.invoices} invoice${result.invoices !== 1 ? 's' : ''} restored.`
@@ -170,8 +178,8 @@ export default function SettingsScreen() {
 
   async function handleDevTopUp() {
     try {
-      const balance = await devTopUpCredits(20);
-      Alert.alert('Credits added', `New balance: ${balance}`);
+      const newBalance = await devTopUpCredits(20);
+      setBalance(newBalance);
     } catch {
       Alert.alert('Top-up failed', 'Please try again.');
     }
@@ -180,68 +188,72 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Account */}
-      <View style={styles.section}>
+      <View style={styles.accountWrap}>
         <Text style={styles.sectionLabel}>Account</Text>
         {!user ? (
           <TouchableOpacity
-            style={styles.row}
+            style={styles.card}
             onPress={handleSignIn}
             disabled={busy !== null}
             activeOpacity={0.7}
           >
-            <View style={styles.rowContent}>
-              <Text style={styles.rowTitle}>Sign in with Google</Text>
-              <Text style={styles.rowSub}>
-                Back up your identity for future cross-device features
-              </Text>
+            <View style={styles.cardIdRow}>
+              <View style={[styles.avatar, styles.avatarMuted]}>
+                <Text style={[styles.avatarText, styles.avatarTextMuted]}>G</Text>
+              </View>
+              <View style={styles.cardIdText}>
+                <Text style={styles.cardEmail}>Sign in with Google</Text>
+                <Text style={styles.rowSub}>
+                  Back up your identity for future cross-device features
+                </Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
             </View>
-            <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
         ) : (
-          <>
-            <View style={styles.row}>
-              <View style={styles.rowContent}>
-                <Text style={styles.rowTitle}>{user.email}</Text>
+          <View style={styles.card}>
+            <View style={styles.cardIdRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {(user.name || user.email).trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.cardIdText}>
+                <Text style={styles.cardEmail} numberOfLines={1}>
+                  {user.email}
+                </Text>
                 <Text style={styles.rowSub}>Signed in with Google</Text>
               </View>
             </View>
+            <View style={styles.balancePanel}>
+              <View>
+                <Text style={styles.balanceLabel}>Scan credits</Text>
+                <Text style={styles.balanceNum}>
+                  {balance === null ? '—' : balance}
+                  <Text style={styles.balanceUnit}>  scans left</Text>
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.getMoreBtn}
+                onPress={() => navigation.navigate('Paywall')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.getMoreText}>Get more</Text>
+              </TouchableOpacity>
+            </View>
             {__DEV__ && (
-              <TouchableOpacity style={styles.row} onPress={handleDevTopUp} activeOpacity={0.7}>
-                <View style={styles.rowContent}>
-                  <Text style={styles.rowTitle}>+20 credits (dev)</Text>
-                  <Text style={styles.rowSub}>Testing only — stands in for a real purchase</Text>
+              <TouchableOpacity style={styles.devRow} onPress={handleDevTopUp} activeOpacity={0.7}>
+                <Text style={styles.devText}>+20 credits · testing only</Text>
+                <View style={styles.devChip}>
+                  <Text style={styles.devChipText}>DEV</Text>
                 </View>
-                <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={styles.row} onPress={handleSignOut} activeOpacity={0.7}>
-              <View style={styles.rowContent}>
-                <Text style={styles.rowTitle}>Sign out</Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
+            <TouchableOpacity onPress={handleSignOut} activeOpacity={0.7}>
+              <Text style={styles.signOutText}>Sign out</Text>
             </TouchableOpacity>
-          </>
-        )}
-      </View>
-
-      {/* Pro / plan */}
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Plan</Text>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => navigation.navigate('Paywall')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.rowContent}>
-            <Text style={styles.rowTitle}>{pro ? 'Slipvault Pro ✓' : 'Free plan'}</Text>
-            <Text style={styles.rowSub}>
-              {pro
-                ? 'Unlimited invoices — thank you for your support!'
-                : `${Math.min(invoiceCount, FREE_INVOICE_LIMIT)}/${FREE_INVOICE_LIMIT} free invoices used · tap to upgrade`}
-            </Text>
           </View>
-          {!pro && <Text style={styles.chevron}>›</Text>}
-        </TouchableOpacity>
+        )}
       </View>
 
       {/* Backup */}
@@ -349,6 +361,86 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: '600', color: '#0f172a' },
   rowSub: { fontSize: 12, color: '#94a3b8', lineHeight: 18 },
   chevron: { fontSize: 22, color: '#cbd5e1', fontWeight: '300' },
+
+  accountWrap: { marginTop: 24, paddingHorizontal: 16 },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  cardIdRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardIdText: { flex: 1, gap: 2 },
+  cardEmail: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2563eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarMuted: { backgroundColor: '#e2e8f0' },
+  avatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  avatarTextMuted: { color: '#64748b' },
+  balancePanel: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  balanceLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: '#60a5fa',
+    textTransform: 'uppercase',
+  },
+  balanceNum: { fontSize: 26, fontWeight: '800', color: '#1d4ed8', marginTop: 2 },
+  balanceUnit: { fontSize: 12, fontWeight: '500', color: '#60a5fa' },
+  getMoreBtn: {
+    backgroundColor: '#2563eb',
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  getMoreText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  devRow: {
+    marginTop: 12,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  devText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  devChip: {
+    backgroundColor: '#f3e8ff',
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  devChipText: { fontSize: 10, fontWeight: '700', color: '#7c3aed' },
+  signOutText: {
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#ef4444',
+    marginTop: 14,
+    paddingVertical: 4,
+  },
 
   version: {
     textAlign: 'center',
