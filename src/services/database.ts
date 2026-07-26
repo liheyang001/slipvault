@@ -74,6 +74,9 @@ export function initDatabase(): void {
   for (const sql of migrations) {
     try { db.execSync(sql); } catch { /* column already exists */ }
   }
+
+  // Clear out rooms left behind by earlier versions, which kept every name ever typed.
+  pruneEmptyUserRooms();
 }
 
 // ─── User categories ────────────────────────────────────────────────────────
@@ -116,12 +119,26 @@ export function deleteUserRoom(name: string): void {
   db.runSync('DELETE FROM user_rooms WHERE name = ?', [name.toLowerCase()]);
 }
 
+/** Drops custom rooms that no longer hold a single item. A room only exists as
+ * long as something is in it, so the pickers never accumulate dead names.
+ * Pending invoices count — their room is a real assignment, just not extracted yet. */
+export function pruneEmptyUserRooms(): void {
+  db.runSync(
+    `DELETE FROM user_rooms
+     WHERE name NOT IN (
+       SELECT DISTINCT LOWER(TRIM(room)) FROM invoices
+       WHERE room IS NOT NULL AND TRIM(room) != ''
+     )`
+  );
+}
+
 /** Move every invoice in one room to another. Returns the number of invoices moved. */
 export function moveRoomInvoices(fromRoom: string, toRoom: string): number {
   const result = db.runSync(
     `UPDATE invoices SET room = ?, updatedAt = ? WHERE LOWER(TRIM(room)) = LOWER(TRIM(?))`,
     [toRoom.trim().toLowerCase(), new Date().toISOString(), fromRoom]
   );
+  pruneEmptyUserRooms(); // the source room is empty now
   return result.changes;
 }
 
@@ -199,12 +216,16 @@ export function updateInvoice(id: string, data: Partial<NewInvoice>): void {
     `UPDATE invoices SET ${fields}, updatedAt = ? WHERE id = ?`,
     [...values, now, id] as (string | number)[]
   );
+
+  // Moving an item out can leave its old room empty.
+  if ('room' in data) pruneEmptyUserRooms();
 }
 
 export function deleteInvoice(id: string): void {
   const invoice = getInvoiceById(id);
   db.runSync('DELETE FROM invoices WHERE id = ?', [id]);
   db.runSync('DELETE FROM ai_valuations WHERE invoiceId = ?', [id]);
+  if (invoice?.room) pruneEmptyUserRooms();
   // Clean up photo files (fire-and-forget)
   if (invoice) {
     for (const uri of [invoice.photoUri, ...(invoice.itemPhotos ?? [])]) {

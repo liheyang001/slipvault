@@ -202,10 +202,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       setCategoryPresets(merged);
     }
     const normalizedRoom = normalizeRoom(editRoom);
-    if (normalizedRoom) {
-      saveUserRoom(normalizedRoom);
-      setRoomPresets(mergeRooms(getUserRooms()));
-    }
+    if (normalizedRoom) saveUserRoom(normalizedRoom);
     const subtotal = parseFloat(editSubtotal) || 0;
     const total = parseFloat(editTotal) || 0;
     // Tax is no longer entered directly — keep data consistent: tax = total - subtotal
@@ -223,6 +220,8 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       tax,
       total,
     });
+    // Read back after the write: the update prunes rooms that just went empty.
+    setRoomPresets(mergeRooms(getUserRooms()));
 
     if (invoice.warrantyNotifId) {
       cancelWarrantyReminder(invoice.warrantyNotifId).catch(() => {});
