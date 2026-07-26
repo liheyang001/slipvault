@@ -232,7 +232,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   };
 
   const handleDelete = () => {
-    Alert.alert('Delete Invoice', 'Are you sure?', [
+    Alert.alert('Delete Item', 'Are you sure?', [
       { text: 'Cancel' },
       {
         text: 'Delete',
@@ -762,7 +762,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={handleDelete}>
-            <Text style={styles.buttonText}>Delete</Text>
+            <Text style={styles.buttonText}>Delete Item</Text>
           </TouchableOpacity>
         )}
       </View>

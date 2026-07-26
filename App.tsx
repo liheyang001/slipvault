@@ -97,7 +97,7 @@ export default function App() {
         <Stack.Screen
           name="InvoiceDetail"
           component={InvoiceDetailScreen}
-          options={{ title: 'Invoice Detail' }}
+          options={{ title: 'Item Detail' }}
         />
         <Stack.Screen
           name="Search"
