@@ -33,7 +33,18 @@ import { formatNZDate } from '../utils/dates';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
-const THRESHOLD_OPTIONS = [250, 500, 1000, 2000];
+const DEFAULT_THRESHOLDS = [250, 500, 1000, 2000];
+const MAX_THRESHOLDS = 8;
+
+/** Reads the saved threshold chips, falling back to the defaults. */
+function loadThresholdOptions(raw: string): number[] {
+  const parsed = raw
+    .split(',')
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const unique = [...new Set(parsed)].sort((a, b) => a - b);
+  return unique.length > 0 ? unique : DEFAULT_THRESHOLDS;
+}
 
 export interface ValuationState {
   enabled: boolean;
@@ -58,8 +69,9 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
     new Map()
   );
   const [valuating, setValuating] = useState(false);
-  const [customModal, setCustomModal] = useState(false);
-  const [customInput, setCustomInput] = useState('');
+  const [thresholdOptions, setThresholdOptions] = useState<number[]>(DEFAULT_THRESHOLDS);
+  const [editModal, setEditModal] = useState(false);
+  const [newThresholdInput, setNewThresholdInput] = useState('');
 
   function loadAIValues() {
     const map = new Map<string, { value: number; note: string }>();
@@ -73,6 +85,7 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
     useCallback(() => {
       const invoices = searchInvoices({});
       const savedThreshold = parseInt(getSetting('hvThreshold', '500'), 10) || 500;
+      setThresholdOptions(loadThresholdOptions(getSetting('hvOptions', '')));
       setThreshold(savedThreshold);
       setTotals(totalContentsValue(invoices));
       setRoomValues(summarizeByRoom(invoices));
@@ -87,19 +100,43 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
     setHighValue(getHighValueItems(searchInvoices({}), value));
   }
 
-  function openCustomThreshold() {
-    setCustomInput(String(threshold));
-    setCustomModal(true);
+  function persistOptions(next: number[]) {
+    setThresholdOptions(next);
+    setSetting('hvOptions', next.join(','));
   }
 
-  function applyCustomThreshold() {
-    const value = Math.round(parseFloat(customInput));
+  function handleAddThreshold() {
+    const value = Math.round(parseFloat(newThresholdInput));
     if (!Number.isFinite(value) || value < 1) {
       Alert.alert('Invalid amount', 'Enter a whole dollar amount of $1 or more.');
       return;
     }
-    handleThreshold(value);
-    setCustomModal(false);
+    if (thresholdOptions.includes(value)) {
+      setNewThresholdInput('');
+      return; // already a chip — nothing to do
+    }
+    if (thresholdOptions.length >= MAX_THRESHOLDS) {
+      Alert.alert('That is plenty', `Keep it to ${MAX_THRESHOLDS} amounts — remove one first.`);
+      return;
+    }
+    persistOptions([...thresholdOptions, value].sort((a, b) => a - b));
+    setNewThresholdInput('');
+  }
+
+  function handleRemoveThreshold(value: number) {
+    if (thresholdOptions.length <= 1) {
+      Alert.alert('Keep one', 'At least one amount has to stay.');
+      return;
+    }
+    const next = thresholdOptions.filter((t) => t !== value);
+    persistOptions(next);
+    // Removing the active chip would leave nothing selected — fall back to the closest.
+    if (threshold === value) {
+      const fallback = next.reduce((best, t) =>
+        Math.abs(t - value) < Math.abs(best - value) ? t : best
+      );
+      handleThreshold(fallback);
+    }
   }
 
   async function handleAIValuate() {
@@ -137,8 +174,6 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highValue, valuating]);
-
-  const isCustomThreshold = !THRESHOLD_OPTIONS.includes(threshold);
 
   const header = (
     <View>
@@ -183,7 +218,7 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
       <View style={styles.hvHeader}>
         <Text style={styles.sectionTitle}>HIGH-VALUE ITEMS</Text>
         <View style={styles.chips}>
-          {THRESHOLD_OPTIONS.map((t) => (
+          {thresholdOptions.map((t) => (
             <TouchableOpacity
               key={t}
               style={[styles.chip, threshold === t && styles.chipActive]}
@@ -195,12 +230,13 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
             </TouchableOpacity>
           ))}
           <TouchableOpacity
-            style={[styles.chip, styles.chipCustom, isCustomThreshold && styles.chipActive]}
-            onPress={openCustomThreshold}
+            style={[styles.chip, styles.chipEdit]}
+            onPress={() => {
+              setNewThresholdInput('');
+              setEditModal(true);
+            }}
           >
-            <Text style={[styles.chipText, isCustomThreshold && styles.chipTextActive]}>
-              {isCustomThreshold ? `$${threshold}+` : 'Custom'}
-            </Text>
+            <Text style={styles.chipEditText}>Edit</Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.hvHint}>
@@ -275,52 +311,63 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
         contentContainerStyle={styles.list}
       />
 
-      {/* Custom threshold */}
+      {/* Threshold amounts editor */}
       <Modal
-        visible={customModal}
+        visible={editModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setCustomModal(false)}
+        onRequestClose={() => setEditModal(false)}
       >
         <TouchableOpacity
           style={styles.modalBg}
           activeOpacity={1}
-          onPress={() => setCustomModal(false)}
+          onPress={() => setEditModal(false)}
         >
           <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
-            <Text style={styles.modalTitle}>Custom threshold</Text>
+            <Text style={styles.modalTitle}>Threshold amounts</Text>
             <Text style={styles.modalSub}>
-              Items at or above this amount count as high-value.
+              These are the shortcuts above the list. Items at or above the one you pick count as
+              high-value.
             </Text>
+
+            <View style={styles.editList}>
+              {thresholdOptions.map((t) => (
+                <View key={t} style={styles.editRow}>
+                  <Text style={styles.editAmount}>${t}+</Text>
+                  <TouchableOpacity
+                    style={styles.editRemove}
+                    onPress={() => handleRemoveThreshold(t)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.editRemoveText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+
             <View style={styles.modalInputRow}>
               <Text style={styles.modalCurrency}>$</Text>
               <TextInput
                 style={styles.modalInput}
-                value={customInput}
-                onChangeText={setCustomInput}
+                value={newThresholdInput}
+                onChangeText={setNewThresholdInput}
                 keyboardType="number-pad"
-                placeholder="500"
+                placeholder="Add an amount"
                 placeholderTextColor="#cbd5e1"
-                autoFocus
-                selectTextOnFocus
-                onSubmitEditing={applyCustomThreshold}
+                onSubmitEditing={handleAddThreshold}
                 returnKeyType="done"
               />
-            </View>
-            <View style={styles.modalBtns}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalCancel]}
-                onPress={() => setCustomModal(false)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalApply]}
-                onPress={applyCustomThreshold}
-              >
-                <Text style={styles.modalApplyText}>Apply</Text>
+              <TouchableOpacity style={styles.addBtn} onPress={handleAddThreshold}>
+                <Text style={styles.addBtnText}>Add</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={[styles.modalBtn, styles.modalApply]}
+              onPress={() => setEditModal(false)}
+            >
+              <Text style={styles.modalApplyText}>Done</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -366,7 +413,7 @@ const styles = StyleSheet.create({
   roomPurchase: { fontSize: 11, color: '#94a3b8' },
 
   hvHeader: { marginTop: 18, marginBottom: 8, gap: 8 },
-  chips: { flexDirection: 'row', gap: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     paddingHorizontal: 13,
     paddingVertical: 6,
@@ -374,7 +421,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#eef2f6',
   },
   chipActive: { backgroundColor: '#2563eb' },
-  chipCustom: { borderWidth: 1, borderColor: '#cbd5e1', borderStyle: 'dashed' },
+  chipEdit: { backgroundColor: 'transparent', paddingHorizontal: 8 },
+  chipEditText: { fontSize: 13, color: '#2563eb', fontWeight: '700' },
   chipText: { fontSize: 13, color: '#475569', fontWeight: '600' },
   chipTextActive: { color: '#fff', fontWeight: '700' },
 
@@ -405,15 +453,39 @@ const styles = StyleSheet.create({
   },
   modalCurrency: { fontSize: 20, fontWeight: '700', color: '#64748b' },
   modalInput: { flex: 1, fontSize: 20, fontWeight: '700', color: '#0f172a', padding: 0 },
-  modalBtns: { flexDirection: 'row', gap: 10, marginTop: 2 },
+  addBtn: {
+    backgroundColor: '#2563eb',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  addBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  editList: { gap: 8 },
+  editRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  editAmount: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  editRemove: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#fee2e2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editRemoveText: { color: '#ef4444', fontSize: 13, fontWeight: '800' },
   modalBtn: {
     flex: 1,
     paddingVertical: 11,
     borderRadius: 999,
     alignItems: 'center',
   },
-  modalCancel: { backgroundColor: '#f1f5f9' },
-  modalCancelText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
   modalApply: { backgroundColor: '#2563eb' },
   modalApplyText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   hvHint: { fontSize: 11, color: '#94a3b8', lineHeight: 15 },
