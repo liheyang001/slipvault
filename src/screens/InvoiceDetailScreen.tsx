@@ -28,6 +28,7 @@ import { RootStackParamList } from '../types/navigation';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
 import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
 import { exclFromIncl, inclFromExcl } from '../utils/tax';
+import { formatNZDate, formatNZDateObject, parseNZDate } from '../utils/dates';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -175,7 +176,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     setCategoryPresets(merged);
     setRoomPresets(mergeRooms(getUserRooms()));
     setEditVendor(invoice.vendor ?? '');
-    setEditDate(invoice.date ?? '');
+    setEditDate(formatNZDate(invoice.date));
     setEditCategory(normalizeCategory(invoice.category ?? ''));
     setEditRoom(normalizeRoom(invoice.room ?? ''));
     setEditBrand(invoice.brand ?? '');
@@ -191,6 +192,14 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
 
   const handleSave = () => {
     if (!invoice) return;
+
+    // Reject a date we can't store rather than silently dropping the edit.
+    const isoDate = parseNZDate(editDate);
+    if (editDate.trim() && !isoDate) {
+      Alert.alert('Invalid date', 'Enter the purchase date as DD/MM/YYYY.');
+      return;
+    }
+
     const normalized = normalizeCategory(editCategory);
     if (normalized) {
       saveUserCategory(normalized);
@@ -209,7 +218,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     const tax = Math.max(0, Math.round((total - subtotal) * 100) / 100);
     updateInvoice(invoice.id, {
       vendor: editVendor.trim(),
-      date: editDate.trim(),
+      date: isoDate,
       category: normalized,
       room: normalizedRoom,
       brand: editBrand.trim(),
@@ -230,7 +239,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
       scheduleWarrantyReminder(
         invoice.id,
         editVendor.trim() || invoice.vendor,
-        editDate.trim() || invoice.date,
+        isoDate || invoice.date,
         editWarrantyMonths
       ).then((notifId) => {
         if (notifId) updateInvoice(invoice.id, { warrantyNotifId: notifId });
@@ -508,10 +517,11 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                 style={styles.input}
                 value={editDate}
                 onChangeText={setEditDate}
-                placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM"
+                placeholder="DD/MM/YYYY"
+                keyboardType="numbers-and-punctuation"
               />
             ) : (
-              <Text style={styles.value}>{invoice.date}</Text>
+              <Text style={styles.value}>{formatNZDate(invoice.date)}</Text>
             )}
           </View>
 
@@ -730,10 +740,10 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
               expired = daysLeft < 0;
               expiring = !expired && daysLeft <= 30;
               statusText = expired
-                ? `Expired on ${expiry.toDateString()}`
+                ? `Expired on ${formatNZDateObject(expiry)}`
                 : expiring
-                ? `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} (${expiry.toDateString()})`
-                : `Valid until ${expiry.toDateString()}`;
+                ? `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} (${formatNZDateObject(expiry)})`
+                : `Valid until ${formatNZDateObject(expiry)}`;
             }
             return (
               <View style={[styles.field, expired && styles.fieldExpired, expiring && styles.fieldExpiring]}>

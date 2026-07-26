@@ -19,6 +19,7 @@ import { insertInvoice, findDuplicateInvoice, updateInvoice, getUserRooms, saveU
 import { scheduleWarrantyReminder } from '../services/notifications';
 import { DEFAULT_CATEGORIES, capitalize } from '../utils/categories';
 import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
+import { formatNZDate, parseNZDate } from '../utils/dates';
 
 const WARRANTY_OPTIONS = [
   { label: 'None', months: 0 },
@@ -120,13 +121,19 @@ export default function ReviewScreen({ route, navigation }: Props) {
   function applyExtracted(data: ExtractedInvoiceData) {
     setExtracted(data);
     setVendor(data.vendor || '');
-    setDate(data.date || new Date().toISOString().slice(0, 10));
+    setDate(formatNZDate(data.date || new Date().toISOString().slice(0, 10)));
     setCategory(data.category || 'other');
   }
 
   async function handleSave() {
     const resolvedVendor = vendor.trim() || 'Unknown';
-    const resolvedDate = date.trim() || new Date().toISOString().slice(0, 10);
+    const resolvedDate = date.trim()
+      ? parseNZDate(date)
+      : new Date().toISOString().slice(0, 10);
+    if (!resolvedDate) {
+      Alert.alert('Invalid date', 'Enter the purchase date as DD/MM/YYYY.');
+      return;
+    }
     const resolvedTotal = extracted?.total ?? 0;
 
     const duplicate = findDuplicateInvoice(resolvedVendor, resolvedDate, resolvedTotal);
@@ -134,7 +141,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
       const confirmed = await new Promise<boolean>((resolve) =>
         Alert.alert(
           'Possible Duplicate',
-          `An invoice from "${resolvedVendor}" on ${resolvedDate} for $${resolvedTotal.toFixed(2)} already exists. Add it again?`,
+          `An invoice from "${resolvedVendor}" on ${formatNZDate(resolvedDate)} for $${resolvedTotal.toFixed(2)} already exists. Add it again?`,
           [
             { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
             { text: 'Add Anyway', onPress: () => resolve(true) },
@@ -304,7 +311,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
                   style={styles.input}
                   value={date}
                   onChangeText={setDate}
-                  placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM"
+                  placeholder="DD/MM/YYYY"
                   placeholderTextColor="#9ca3af"
                   keyboardType="numbers-and-punctuation"
                 />

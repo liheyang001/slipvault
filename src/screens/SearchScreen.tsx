@@ -16,6 +16,7 @@ import { Invoice, SearchFilters } from '../types/invoice';
 import { RootStackParamList } from '../types/navigation';
 import { DEFAULT_CATEGORIES, capitalize } from '../utils/categories';
 import { exportCSV, exportPDF } from '../services/exporter';
+import { formatNZDate, parseNZDate } from '../utils/dates';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
 
@@ -83,12 +84,13 @@ export default function SearchScreen({ navigation }: Props) {
     setCategoryList(merged);
   }, []);
 
+  // dateFrom/dateTo hold what the user sees (DD/MM/YYYY); the query needs ISO.
   function buildFilters(): SearchFilters {
     return {
       query: query.trim() || undefined,
       category: selectedCategory || undefined,
-      dateFrom: dateFrom.trim() || undefined,
-      dateTo: dateTo.trim() || undefined,
+      dateFrom: parseNZDate(dateFrom) || undefined,
+      dateTo: parseNZDate(dateTo) || undefined,
     };
   }
 
@@ -109,8 +111,8 @@ export default function SearchScreen({ navigation }: Props) {
       const { from, to } = preset.getRange();
       setActivePreset(preset.label);
       setShowCustom(false);
-      setDateFrom(from);
-      setDateTo(to);
+      setDateFrom(formatNZDate(from));
+      setDateTo(formatNZDate(to));
       runSearch({ dateFrom: from, dateTo: to });
     }
   }
@@ -131,11 +133,13 @@ export default function SearchScreen({ navigation }: Props) {
   function handleCustomDateChange(from: string, to: string) {
     setDateFrom(from);
     setDateTo(to);
-    // Only search when both look like valid dates or are empty
-    const fromOk = from.length === 0 || /^\d{4}-\d{2}-\d{2}$/.test(from);
-    const toOk = to.length === 0 || /^\d{4}-\d{2}-\d{2}$/.test(to);
+    // Only search once each field is either empty or a date we can parse.
+    const isoFrom = parseNZDate(from);
+    const isoTo = parseNZDate(to);
+    const fromOk = from.length === 0 || !!isoFrom;
+    const toOk = to.length === 0 || !!isoTo;
     if (fromOk && toOk) {
-      runSearch({ dateFrom: from || undefined, dateTo: to || undefined });
+      runSearch({ dateFrom: isoFrom || undefined, dateTo: isoTo || undefined });
     }
   }
 
@@ -241,7 +245,7 @@ export default function SearchScreen({ navigation }: Props) {
                 <Text style={styles.dateFieldLabel}>From</Text>
                 <TextInput
                   style={styles.dateInput}
-                  placeholder="YYYY-MM-DD"
+                  placeholder="DD/MM/YYYY"
                   placeholderTextColor="#9ca3af"
                   value={dateFrom}
                   onChangeText={(v) => handleCustomDateChange(v, dateTo)}
@@ -254,7 +258,7 @@ export default function SearchScreen({ navigation }: Props) {
                 <Text style={styles.dateFieldLabel}>To</Text>
                 <TextInput
                   style={styles.dateInput}
-                  placeholder="YYYY-MM-DD"
+                  placeholder="DD/MM/YYYY"
                   placeholderTextColor="#9ca3af"
                   value={dateTo}
                   onChangeText={(v) => handleCustomDateChange(dateFrom, v)}
@@ -328,7 +332,7 @@ export default function SearchScreen({ navigation }: Props) {
                   ) : null}
                 </View>
                 <View style={styles.cardRow}>
-                  <Text style={styles.date}>{item.date}</Text>
+                  <Text style={styles.date}>{formatNZDate(item.date)}</Text>
                   <Text style={styles.total}>${item.total.toFixed(2)}</Text>
                 </View>
               </TouchableOpacity>

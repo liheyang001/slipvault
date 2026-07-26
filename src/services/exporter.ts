@@ -4,6 +4,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Invoice } from '../types/invoice';
 import { capitalize } from '../utils/categories';
 import { capitalizeRoom } from '../utils/rooms';
+import { formatNZDate } from '../utils/dates';
 
 // ─── CSV ─────────────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ function buildPDFHtml(invoices: Invoice[]): string {
     .map(
       (inv) => `
       <tr>
-        <td>${inv.date || '—'}</td>
+        <td>${formatNZDate(inv.date) || '—'}</td>
         <td>${inv.vendor || 'Unknown'}</td>
         <td><span class="badge">${capitalize(inv.category) || 'Other'}</span></td>
         <td class="num">$${inv.subtotal.toFixed(2)}</td>
@@ -200,7 +201,7 @@ function buildRoomPDFHtml(invoices: Invoice[], roomName: string): string {
       <div class="invoice">
         <div class="inv-head">
           <span class="vendor">${inv.vendor || 'Unknown'}</span>
-          <span class="date">${inv.date || '—'}</span>
+          <span class="date">${formatNZDate(inv.date) || '—'}</span>
         </div>
         ${identLine}
         <table class="items">

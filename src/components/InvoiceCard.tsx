@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Invoice } from '../types/invoice';
 import { capitalizeRoom, roomIcon } from '../utils/rooms';
+import { formatNZDate } from '../utils/dates';
 
 interface Props {
   invoice: Invoice;
@@ -34,9 +35,7 @@ const DEFAULT_CONFIG = { color: '#6b7280', bg: '#f3f4f6', icon: '📄' };
 export default function InvoiceCard({ invoice, onPress, onDelete, onLongPress }: Props) {
   const cfg = CATEGORY_CONFIG[invoice.category?.toLowerCase()] ?? DEFAULT_CONFIG;
 
-  const formattedDate = invoice.date
-    ? new Date(invoice.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : 'No date';
+  const formattedDate = invoice.date ? formatNZDate(invoice.date) : 'No date';
 
   const warrantyBadge = (() => {
     if (!invoice.warrantyMonths) return null;

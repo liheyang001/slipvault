@@ -29,6 +29,7 @@ import {
   ValuedItem,
 } from '../utils/valuation';
 import { capitalizeRoom, roomIcon } from '../utils/rooms';
+import { formatNZDate } from '../utils/dates';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -236,7 +237,7 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
                   {item.quantity > 1 ? `  ×${item.quantity}` : ''}
                 </Text>
                 <Text style={styles.itemMeta} numberOfLines={1}>
-                  {item.vendor || 'Unknown'} · {item.date || 'No date'}
+                  {item.vendor || 'Unknown'} · {formatNZDate(item.date) || 'No date'}
                   {item.room ? ` · ${capitalizeRoom(item.room)}` : ''}
                 </Text>
                 {ai?.note ? (

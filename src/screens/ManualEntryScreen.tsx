@@ -29,6 +29,7 @@ import {
 import { scheduleWarrantyReminder } from '../services/notifications';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
 import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
+import { formatNZDate, parseNZDate } from '../utils/dates';
 
 const WARRANTY_OPTIONS = [
   { label: 'None', months: 0 },
@@ -45,7 +46,7 @@ export default function ManualEntryScreen({ route, navigation }: Props) {
 
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(formatNZDate(new Date().toISOString().slice(0, 10)));
   const [category, setCategory] = useState('');
   const [room, setRoom] = useState(defaultRoom);
   const [brand, setBrand] = useState('');
@@ -129,8 +130,9 @@ export default function ManualEntryScreen({ route, navigation }: Props) {
       Alert.alert('Amount required', 'Enter what the item cost (roughly is fine).');
       return;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
-      Alert.alert('Invalid date', 'Use the YYYY-MM-DD format, e.g. 2024-11-05.');
+    const isoDate = parseNZDate(date);
+    if (!isoDate) {
+      Alert.alert('Invalid date', 'Use the DD/MM/YYYY format, e.g. 05/11/2024.');
       return;
     }
 
@@ -157,7 +159,7 @@ export default function ManualEntryScreen({ route, navigation }: Props) {
         photoUri: '', // no receipt — that's the point
         ocrText: '',
         vendor: trimmedName,
-        date: date.trim(),
+        date: isoDate,
         items: [],
         subtotal: total,
         tax: 0,
@@ -252,8 +254,9 @@ export default function ManualEntryScreen({ route, navigation }: Props) {
               style={styles.input}
               value={date}
               onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
+              placeholder="DD/MM/YYYY"
               placeholderTextColor="#9ca3af"
+              keyboardType="numbers-and-punctuation"
             />
           </View>
         </View>
