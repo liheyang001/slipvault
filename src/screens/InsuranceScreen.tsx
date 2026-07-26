@@ -363,10 +363,10 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
             </View>
 
             <TouchableOpacity
-              style={[styles.modalBtn, styles.modalApply]}
+              style={styles.saveBtn}
               onPress={() => setEditModal(false)}
             >
-              <Text style={styles.modalApplyText}>Done</Text>
+              <Text style={styles.saveBtnText}>Save</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -453,11 +453,12 @@ const styles = StyleSheet.create({
   },
   modalCurrency: { fontSize: 20, fontWeight: '700', color: '#64748b' },
   modalInput: { flex: 1, fontSize: 20, fontWeight: '700', color: '#0f172a', padding: 0 },
+  // Same pill spec as the Settings "Get more" button.
   addBtn: {
     backgroundColor: '#2563eb',
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   addBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   editList: { gap: 8 },
@@ -480,14 +481,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   editRemoveText: { color: '#ef4444', fontSize: 13, fontWeight: '800' },
-  modalBtn: {
-    flex: 1,
-    paddingVertical: 11,
+  saveBtn: {
+    backgroundColor: '#2563eb',
+    paddingVertical: 12,
     borderRadius: 999,
     alignItems: 'center',
+    marginTop: 4,
   },
-  modalApply: { backgroundColor: '#2563eb' },
-  modalApplyText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  saveBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   hvHint: { fontSize: 11, color: '#94a3b8', lineHeight: 15 },
 
   itemRow: {
