@@ -28,6 +28,7 @@ import { RootStackParamList } from '../types/navigation';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
 import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
 import { exclFromIncl, inclFromExcl } from '../utils/tax';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -78,6 +79,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const [noteDraft, setNoteDraft] = useState('');
   const [warrantyModalVisible, setWarrantyModalVisible] = useState(false);
   const [warrantyYearsInput, setWarrantyYearsInput] = useState('');
+  const [scannerVisible, setScannerVisible] = useState(false);
 
   const scale = React.useRef(new Animated.Value(1)).current;
   const committedScale = React.useRef(1);
@@ -625,13 +627,23 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
               </View>
               <View style={styles.field}>
                 <Text style={styles.label}>Serial Number</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editSerial}
-                  onChangeText={setEditSerial}
-                  placeholder="Usually on the item or its box"
-                  autoCapitalize="characters"
-                />
+                <View style={styles.serialRow}>
+                  <TextInput
+                    style={[styles.input, styles.serialInput]}
+                    value={editSerial}
+                    onChangeText={setEditSerial}
+                    placeholder="Usually on the item or its box"
+                    autoCapitalize="characters"
+                  />
+                  <TouchableOpacity
+                    style={styles.scanBtn}
+                    onPress={() => setScannerVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="barcode-outline" size={20} color="#2563eb" />
+                    <Text style={styles.scanBtnText}>Scan</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </>
           ) : (
@@ -810,6 +822,16 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Serial number barcode scanner */}
+      <BarcodeScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScanned={(value) => {
+          setEditSerial(value);
+          setScannerVisible(false);
+        }}
+      />
 
       {/* Custom warranty modal */}
       <Modal
@@ -1022,6 +1044,18 @@ const styles = StyleSheet.create({
   valueExpiring: { color: '#d97706' },
   itemText: { fontSize: 14, color: '#666', marginTop: 4, marginLeft: 8 },
   serialText: { fontSize: 13, color: '#6b7280', marginTop: 4, fontVariant: ['tabular-nums'] },
+  serialRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  serialInput: { flex: 1 },
+  scanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#eff6ff',
+  },
+  scanBtnText: { fontSize: 13, fontWeight: '700', color: '#2563eb' },
   gstRow: { flexDirection: 'row', gap: 24 },
   gstCol: { flex: 1 },
   // Shared line box so the 18px total and the 16px subtotal sit on one baseline.
