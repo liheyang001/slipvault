@@ -6,6 +6,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -55,6 +57,8 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
     new Map()
   );
   const [valuating, setValuating] = useState(false);
+  const [customModal, setCustomModal] = useState(false);
+  const [customInput, setCustomInput] = useState('');
 
   function loadAIValues() {
     const map = new Map<string, { value: number; note: string }>();
@@ -80,6 +84,21 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
     setThreshold(value);
     setSetting('hvThreshold', String(value));
     setHighValue(getHighValueItems(searchInvoices({}), value));
+  }
+
+  function openCustomThreshold() {
+    setCustomInput(String(threshold));
+    setCustomModal(true);
+  }
+
+  function applyCustomThreshold() {
+    const value = Math.round(parseFloat(customInput));
+    if (!Number.isFinite(value) || value < 1) {
+      Alert.alert('Invalid amount', 'Enter a whole dollar amount of $1 or more.');
+      return;
+    }
+    handleThreshold(value);
+    setCustomModal(false);
   }
 
   async function handleAIValuate() {
@@ -117,6 +136,8 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highValue, valuating]);
+
+  const isCustomThreshold = !THRESHOLD_OPTIONS.includes(threshold);
 
   const header = (
     <View>
@@ -172,6 +193,14 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
               </Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity
+            style={[styles.chip, styles.chipCustom, isCustomThreshold && styles.chipActive]}
+            onPress={openCustomThreshold}
+          >
+            <Text style={[styles.chipText, isCustomThreshold && styles.chipTextActive]}>
+              {isCustomThreshold ? `$${threshold}+` : 'Custom'}
+            </Text>
+          </TouchableOpacity>
         </View>
         <Text style={styles.hvHint}>
           Single items at or above the threshold — these may need to be listed (specified)
@@ -244,6 +273,56 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
         }
         contentContainerStyle={styles.list}
       />
+
+      {/* Custom threshold */}
+      <Modal
+        visible={customModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCustomModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBg}
+          activeOpacity={1}
+          onPress={() => setCustomModal(false)}
+        >
+          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>Custom threshold</Text>
+            <Text style={styles.modalSub}>
+              Items at or above this amount count as high-value.
+            </Text>
+            <View style={styles.modalInputRow}>
+              <Text style={styles.modalCurrency}>$</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={customInput}
+                onChangeText={setCustomInput}
+                keyboardType="number-pad"
+                placeholder="500"
+                placeholderTextColor="#cbd5e1"
+                autoFocus
+                selectTextOnFocus
+                onSubmitEditing={applyCustomThreshold}
+                returnKeyType="done"
+              />
+            </View>
+            <View style={styles.modalBtns}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalCancel]}
+                onPress={() => setCustomModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalApply]}
+                onPress={applyCustomThreshold}
+              >
+                <Text style={styles.modalApplyText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -294,8 +373,48 @@ const styles = StyleSheet.create({
     backgroundColor: '#eef2f6',
   },
   chipActive: { backgroundColor: '#2563eb' },
+  chipCustom: { borderWidth: 1, borderColor: '#cbd5e1', borderStyle: 'dashed' },
   chipText: { fontSize: 13, color: '#475569', fontWeight: '600' },
   chipTextActive: { color: '#fff', fontWeight: '700' },
+
+  // Custom threshold modal
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    gap: 12,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  modalSub: { fontSize: 13, color: '#64748b', lineHeight: 18 },
+  modalInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modalCurrency: { fontSize: 20, fontWeight: '700', color: '#64748b' },
+  modalInput: { flex: 1, fontSize: 20, fontWeight: '700', color: '#0f172a', padding: 0 },
+  modalBtns: { flexDirection: 'row', gap: 10, marginTop: 2 },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  modalCancel: { backgroundColor: '#f1f5f9' },
+  modalCancelText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
+  modalApply: { backgroundColor: '#2563eb' },
+  modalApplyText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   hvHint: { fontSize: 11, color: '#94a3b8', lineHeight: 15 },
 
   itemRow: {
