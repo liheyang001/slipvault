@@ -638,25 +638,25 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Amounts: Excl. GST / Incl. GST on one line */}
+          {/* Amounts: Total Value (left, aligned with Category) / Excl. GST */}
           <View style={styles.field}>
             <View style={styles.gstRow}>
               <View style={styles.gstCol}>
+                <Text style={styles.label}>Total Value</Text>
+                {isEditing ? (
+                  <TextInput style={[styles.input, styles.totalInput]} value={editTotal}
+                    onChangeText={handleTotalChange} keyboardType="decimal-pad" placeholder="0.00" />
+                ) : (
+                  <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
+                )}
+              </View>
+              <View style={[styles.gstCol, !isEditing && styles.pairRight]}>
                 <Text style={styles.label}>Excl. GST</Text>
                 {isEditing ? (
                   <TextInput style={styles.input} value={editSubtotal} onChangeText={handleSubtotalChange}
                     keyboardType="decimal-pad" placeholder="0.00" />
                 ) : (
                   <Text style={styles.value}>${invoice.subtotal.toFixed(2)}</Text>
-                )}
-              </View>
-              <View style={[styles.gstCol, !isEditing && styles.pairRight]}>
-                <Text style={styles.label}>Incl. GST</Text>
-                {isEditing ? (
-                  <TextInput style={[styles.input, styles.totalInput]} value={editTotal}
-                    onChangeText={handleTotalChange} keyboardType="decimal-pad" placeholder="0.00" />
-                ) : (
-                  <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
                 )}
               </View>
             </View>
