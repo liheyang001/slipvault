@@ -3,7 +3,6 @@ import {
   View,
   Text,
   FlatList,
-  ScrollView,
   StyleSheet,
   TouchableOpacity,
   Alert,
@@ -43,6 +42,7 @@ export default function RoomsScreen({ query = '', onRoomChange }: Props) {
   >(null);
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [roomModalVisible, setRoomModalVisible] = useState(false);
 
   const refresh = useCallback(
     (preferRoom?: string) => {
@@ -73,6 +73,7 @@ export default function RoomsScreen({ query = '', onRoomChange }: Props) {
   function handleSelectRoom(room: string) {
     setSelectedRoom(room);
     setInvoices(searchInvoices({ room, query: query || undefined }));
+    setRoomModalVisible(false);
     // Selection belongs to the previous room's list — leave edit mode
     setEditing(false);
     setSelected(new Set());
@@ -150,6 +151,12 @@ export default function RoomsScreen({ query = '', onRoomChange }: Props) {
 
   const roomTotal = invoices.reduce((sum, inv) => sum + inv.total, 0);
 
+  // Quick-picker rooms: the first two, but always keep the selected one visible.
+  const topRooms = rooms.slice(0, 2);
+  const displayRooms = topRooms.some((r) => r.room === selectedRoom)
+    ? topRooms
+    : [...topRooms.slice(0, 1), ...rooms.filter((r) => r.room === selectedRoom)];
+
   if (rooms.length === 0) {
     return (
       <View style={styles.container}>
@@ -167,26 +174,33 @@ export default function RoomsScreen({ query = '', onRoomChange }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* Room chip bar */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.roomBar}
-        contentContainerStyle={styles.roomContent}
-      >
-        {rooms.map((r) => (
+      {/* Room quick picker: most-used rooms + a dropdown for the rest */}
+      <View style={styles.roomBar}>
+        {displayRooms.map((r) => (
           <TouchableOpacity
             key={r.room}
             style={[styles.chip, selectedRoom === r.room && styles.chipActive]}
             onPress={() => handleSelectRoom(r.room)}
           >
             <Text style={styles.chipIcon}>{roomIcon(r.room)}</Text>
-            <Text style={[styles.chipText, selectedRoom === r.room && styles.chipTextActive]}>
+            <Text
+              style={[styles.chipText, selectedRoom === r.room && styles.chipTextActive]}
+              numberOfLines={1}
+            >
               {capitalizeRoom(r.room)} ({r.count})
             </Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+        {rooms.length > displayRooms.length && (
+          <TouchableOpacity
+            style={styles.roomMore}
+            onPress={() => setRoomModalVisible(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+          >
+            <Text style={styles.roomMoreText}>Show All</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       {/* Summary + actions */}
       <View style={styles.summaryRow}>
@@ -297,6 +311,43 @@ export default function RoomsScreen({ query = '', onRoomChange }: Props) {
         }
       />
 
+      {/* Room picker */}
+      <Modal
+        visible={roomModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRoomModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBg}
+          activeOpacity={1}
+          onPress={() => setRoomModalVisible(false)}
+        >
+          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>Switch room</Text>
+            <View style={styles.modalChips}>
+              {rooms.map((r) => (
+                <TouchableOpacity
+                  key={r.room}
+                  style={[styles.modalChip, selectedRoom === r.room && styles.modalChipActive]}
+                  onPress={() => handleSelectRoom(r.room)}
+                >
+                  <Text style={styles.modalChipIcon}>{roomIcon(r.room)}</Text>
+                  <Text
+                    style={[
+                      styles.modalChipText,
+                      selectedRoom === r.room && styles.modalChipTextActive,
+                    ]}
+                  >
+                    {capitalizeRoom(r.room)} ({r.count})
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Destination room picker */}
       <Modal
         visible={moveModal !== null}
@@ -340,13 +391,27 @@ const styles = StyleSheet.create({
   noMatchText: { fontSize: 13, color: '#94a3b8' },
 
   roomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
-    maxHeight: 48,
   },
-  roomContent: { paddingHorizontal: 14, paddingVertical: 8, gap: 8, flexDirection: 'row' },
+  roomMore: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 6,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 'auto',
+  },
+  roomMoreText: { fontSize: 13, color: '#2563eb', fontWeight: '700' },
   chip: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -459,7 +524,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#eef2f6',
   },
   modalChipIcon: { fontSize: 13 },
+  modalChipActive: { backgroundColor: '#2563eb' },
   modalChipText: { fontSize: 14, color: '#0f172a', fontWeight: '600' },
+  modalChipTextActive: { color: '#fff', fontWeight: '700' },
   modalCancel: { alignItems: 'center', paddingVertical: 8 },
   modalCancelText: { fontSize: 14, color: '#64748b', fontWeight: '600' },
 
