@@ -43,6 +43,16 @@ const WARRANTY_OPTIONS = [
   { label: '3 Years', months: 36 },
 ];
 
+/** Chip label for a warranty span that isn't one of the presets. */
+function formatWarranty(months: number): string {
+  if (months % 12 === 0) {
+    const years = months / 12;
+    return `${years} Year${years !== 1 ? 's' : ''}`;
+  }
+  const years = +(months / 12).toFixed(2);
+  return `${years} Years`;
+}
+
 type Props = NativeStackScreenProps<RootStackParamList, 'InvoiceDetail'>;
 
 export default function InvoiceDetailScreen({ route, navigation }: Props) {
@@ -66,6 +76,8 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
   const [heroUri, setHeroUri] = useState<string | null>(null);
   const [noteModalVisible, setNoteModalVisible] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
+  const [warrantyModalVisible, setWarrantyModalVisible] = useState(false);
+  const [warrantyYearsInput, setWarrantyYearsInput] = useState('');
 
   const scale = React.useRef(new Animated.Value(1)).current;
   const committedScale = React.useRef(1);
@@ -377,6 +389,24 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     if (Number.isFinite(n)) setEditTotal(inclFromExcl(n).toFixed(2));
   }
 
+  function openCustomWarranty() {
+    // Prefill with the current span in years, blank when it's a whole preset.
+    setWarrantyYearsInput(
+      editWarrantyMonths > 0 ? String(+(editWarrantyMonths / 12).toFixed(2)) : ''
+    );
+    setWarrantyModalVisible(true);
+  }
+
+  function applyCustomWarranty() {
+    const years = parseFloat(warrantyYearsInput);
+    if (!Number.isFinite(years) || years <= 0 || years > 50) {
+      Alert.alert('Invalid length', 'Enter a number of years between 0 and 50.');
+      return;
+    }
+    setEditWarrantyMonths(Math.round(years * 12));
+    setWarrantyModalVisible(false);
+  }
+
   function handleRemoveItemPhoto(uri: string) {
     if (!invoice) return;
     Alert.alert('Remove Photo', 'Remove this item photo?', [
@@ -410,6 +440,8 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
 
   // Square main photo: tapped thumb becomes the main; falls back to the first photo.
   const mainPhoto = heroUri && itemPhotos.includes(heroUri) ? heroUri : itemPhotos[0];
+
+  const isCustomWarranty = !WARRANTY_OPTIONS.some((o) => o.months === editWarrantyMonths);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
@@ -634,6 +666,14 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                     </Text>
                   </TouchableOpacity>
                 ))}
+                <TouchableOpacity
+                  style={[styles.preset, styles.presetCustom, isCustomWarranty && styles.presetActive]}
+                  onPress={openCustomWarranty}
+                >
+                  <Text style={[styles.presetText, isCustomWarranty && styles.presetTextActive]}>
+                    {isCustomWarranty ? formatWarranty(editWarrantyMonths) : 'Custom'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -644,19 +684,23 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
               <View style={styles.gstCol}>
                 <Text style={styles.label}>Total Value</Text>
                 {isEditing ? (
-                  <TextInput style={[styles.input, styles.totalInput]} value={editTotal}
+                  <TextInput style={[styles.input, styles.gstInput, styles.totalInput]} value={editTotal}
                     onChangeText={handleTotalChange} keyboardType="decimal-pad" placeholder="0.00" />
                 ) : (
-                  <Text style={[styles.value, styles.totalValue]}>${invoice.total.toFixed(2)}</Text>
+                  <Text style={[styles.value, styles.gstValue, styles.totalValue]}>
+                    ${invoice.total.toFixed(2)}
+                  </Text>
                 )}
               </View>
               <View style={[styles.gstCol, !isEditing && styles.pairRight]}>
                 <Text style={styles.label}>Excl. GST</Text>
                 {isEditing ? (
-                  <TextInput style={styles.input} value={editSubtotal} onChangeText={handleSubtotalChange}
+                  <TextInput style={[styles.input, styles.gstInput]} value={editSubtotal} onChangeText={handleSubtotalChange}
                     keyboardType="decimal-pad" placeholder="0.00" />
                 ) : (
-                  <Text style={styles.value}>${invoice.subtotal.toFixed(2)}</Text>
+                  <Text style={[styles.value, styles.gstValue]}>
+                    ${invoice.subtotal.toFixed(2)}
+                  </Text>
                 )}
               </View>
             </View>
@@ -766,6 +810,53 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Custom warranty modal */}
+      <Modal
+        visible={warrantyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWarrantyModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.noteModalBg}
+          activeOpacity={1}
+          onPress={() => setWarrantyModalVisible(false)}
+        >
+          <View style={styles.noteCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.noteTitle}>Custom warranty</Text>
+            <View style={styles.warrantyInputRow}>
+              <TextInput
+                style={styles.warrantyInput}
+                value={warrantyYearsInput}
+                onChangeText={setWarrantyYearsInput}
+                keyboardType="decimal-pad"
+                placeholder="5"
+                placeholderTextColor="#cbd5e1"
+                autoFocus
+                selectTextOnFocus
+                onSubmitEditing={applyCustomWarranty}
+                returnKeyType="done"
+              />
+              <Text style={styles.warrantyUnit}>years</Text>
+            </View>
+            <Text style={styles.hintText}>
+              Decimals are fine — 0.5 is six months. Counts from the purchase date.
+            </Text>
+            <View style={styles.noteBtnRow}>
+              <TouchableOpacity
+                style={styles.noteClearBtn}
+                onPress={() => setWarrantyModalVisible(false)}
+              >
+                <Text style={styles.noteClearText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.noteSaveBtn} onPress={applyCustomWarranty}>
+                <Text style={styles.noteSaveText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Note modal */}
       <Modal
@@ -933,6 +1024,10 @@ const styles = StyleSheet.create({
   serialText: { fontSize: 13, color: '#6b7280', marginTop: 4, fontVariant: ['tabular-nums'] },
   gstRow: { flexDirection: 'row', gap: 24 },
   gstCol: { flex: 1 },
+  // Shared line box so the 18px total and the 16px subtotal sit on one baseline.
+  gstValue: { lineHeight: 24 },
+  // Same idea in edit mode: equal height keeps both underlines on one line.
+  gstInput: { height: 34 },
   pairRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   pairRight: { alignItems: 'flex-end' },
 
@@ -1008,7 +1103,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f5f9',
   },
   presetActive: { backgroundColor: '#2563eb' },
+  presetCustom: { borderWidth: 1, borderColor: '#cbd5e1', borderStyle: 'dashed' },
   presetIcon: { fontSize: 12 },
+  warrantyInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  warrantyInput: { flex: 1, fontSize: 20, fontWeight: '700', color: '#0f172a', padding: 0 },
+  warrantyUnit: { fontSize: 15, fontWeight: '600', color: '#64748b' },
   presetText: { fontSize: 13, color: '#475569', fontWeight: '600' },
   presetTextActive: { color: '#fff' },
   hintText: { marginTop: 8, fontSize: 11, color: '#9ca3af', fontStyle: 'italic' },
