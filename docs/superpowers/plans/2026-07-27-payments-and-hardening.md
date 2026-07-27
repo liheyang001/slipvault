@@ -1257,3 +1257,38 @@ one. The actual fix belongs in the Paywall: before calling `buyPack`, confirm
 `getStoredUser()` returns a user, and if not, run the sign-in flow first and
 abort the purchase if the user cancels. This mirrors the gate `CameraScreen`
 already applies before scanning.
+
+---
+
+### Task 4.5 (inserted during execution): Client handling for the new status codes
+
+Code review of Task 4 found that the Worker now returns three statuses the app
+has no handling for, each producing a misleading dead end:
+
+- **401 on `valuate`** — `InsuranceScreen.handleAIValuate` never checks for a
+  signed-in user, unlike `CameraScreen.ensureSignedIn` before a scan. A user
+  who never signed in now gets "Could not reach the valuation service. Check
+  your connection", which is wrong and offers no path forward.
+- **429 on scan** — falls into `ReviewScreen`'s generic branch and renders "No
+  network connection" to a user sitting on wifi who simply scanned several
+  receipts quickly.
+- **413 on scan** — a permanent condition shown as a transient one, and
+  `HomeScreen.retryPending` then retries it forever, stranding the invoice in
+  `pending` with no prompt to retake the photo.
+
+This lands before Task 5 deploys the Worker, so the app never sees a status it
+cannot explain. All of it is plain JS — Metro hot reload covers it, no EAS
+build needed.
+
+**Files:** `src/services/claude.ts`, `src/screens/ReviewScreen.tsx`,
+`src/screens/InsuranceScreen.tsx`
+
+- [ ] **Step 1:** Add typed errors beside the existing `InsufficientCreditsError`
+      in `claude.ts` for 429 and 413, and map them in `extractInvoiceData`.
+- [ ] **Step 2:** Give `ReviewScreen` distinct, actionable copy for each:
+      rate-limited ("wait a moment"), image-too-large ("retake the photo"),
+      leaving the network box as the genuine fallback.
+- [ ] **Step 3:** Gate `InsuranceScreen.handleAIValuate` on a stored user,
+      prompting sign-in the way `CameraScreen` does, so the 401 is unreachable
+      from the UI.
+- [ ] **Step 4:** `npx tsc --noEmit`, bundle check, commit.
