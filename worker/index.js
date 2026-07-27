@@ -25,13 +25,13 @@ const SCANS_PER_MINUTE = 10;
 const SCANS_PER_HOUR = 100;
 const SIGNUPS_PER_IP_PER_DAY = 3;
 
-// Credits are derived from the product ID here, never from the request body,
-// so a forged webhook can only ever buy a pack that exists.
-const CREDIT_PACKS = {
+// Null prototype: a product_id of "constructor"/"toString" must not resolve
+// to an inherited property and slip past the unknown-product check.
+const CREDIT_PACKS = Object.assign(Object.create(null), {
   credits_30: 30,
   credits_100: 100,
   credits_300: 300,
-};
+});
 
 const PROMPT = `Analyze this image and extract invoice/receipt data.
 
@@ -265,6 +265,17 @@ async function handleWebhook(request, env) {
 
   if (!userId || !eventId) {
     return new Response('Missing app_user_id or id', { status: 400 });
+  }
+  // A purchase under an anonymous ID cannot be spent: balances are read via
+  // the Google sub from verifyIdToken, which never matches $RCAnonymousID.
+  // Crediting it would take the money and strand it. Acknowledge (a retry
+  // would carry the same id and fail identically) and log loudly for manual
+  // reconciliation.
+  if (userId.startsWith('$RCAnonymousID:')) {
+    console.log(
+      `rc-webhook: UNCLAIMED PURCHASE — anonymous app_user_id ${userId}, product ${event.product_id}, event ${eventId}. Client did not call Purchases.logIn before buying.`
+    );
+    return new Response('Anonymous user', { status: 200 });
   }
   if (!credits) {
     // Acknowledged, not retried: an unknown product will never become known.
