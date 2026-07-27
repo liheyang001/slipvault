@@ -336,8 +336,14 @@ export default {
     }
 
     // ─── Action: valuate (AI depreciation for contents insurance) ───────────
-    // Unchanged: no identity or credit requirement.
+    // Requires a signed-in user (the app key is shipped in the APK and cannot
+    // gate anything), but costs no credits — charging would discourage use.
     if (body.action === 'valuate') {
+      try {
+        await verifyIdToken(request, env);
+      } catch {
+        return new Response('Unauthorized', { status: 401 });
+      }
       const items = body.items;
       if (!Array.isArray(items) || items.length === 0 || items.length > 40) {
         return new Response('items must be a non-empty array (max 40)', { status: 400 });
@@ -357,8 +363,8 @@ export default {
         body: JSON.stringify(valuationPayload),
       });
       if (!res.ok) {
-        const errText = await res.text();
-        return new Response(`Gemini error: ${errText}`, { status: res.status });
+        console.log(`valuate: Gemini ${res.status}: ${await res.text()}`);
+        return new Response('Valuation service unavailable', { status: 502 });
       }
       const data = await res.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
@@ -379,7 +385,7 @@ export default {
       } catch {
         return new Response('Unauthorized', { status: 401 });
       }
-      await ensureUser(env, identity.sub, identity.email);
+      await ensureUser(env, identity.sub, identity.email, request.headers.get('cf-connecting-ip'));
       const balance = await getBalance(env, identity.sub);
       return new Response(JSON.stringify({ balance }), {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -404,7 +410,7 @@ export default {
       if (!Number.isInteger(amount) || amount <= 0 || amount > 1000) {
         return new Response('amount must be an integer between 1 and 1000', { status: 400 });
       }
-      await ensureUser(env, identity.sub, identity.email);
+      await ensureUser(env, identity.sub, identity.email, request.headers.get('cf-connecting-ip'));
       await addCredits(env, identity.sub, amount);
       const balance = await getBalance(env, identity.sub);
       return new Response(JSON.stringify({ balance }), {
@@ -417,6 +423,9 @@ export default {
     if (!imageBase64) {
       return new Response('Missing imageBase64', { status: 400 });
     }
+    if (typeof imageBase64 !== 'string' || imageBase64.length > MAX_IMAGE_BASE64) {
+      return new Response('Image too large', { status: 413 });
+    }
 
     let identity;
     try {
@@ -425,7 +434,15 @@ export default {
       return new Response('Unauthorized', { status: 401 });
     }
 
-    await ensureUser(env, identity.sub, identity.email);
+    await ensureUser(env, identity.sub, identity.email, request.headers.get('cf-connecting-ip'));
+
+    if (await scanRateExceeded(env, identity.sub)) {
+      return new Response(JSON.stringify({ error: 'rate_limited' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
     const spent = await spendCredit(env, identity.sub);
     if (!spent) {
       const balance = await getBalance(env, identity.sub);
@@ -455,13 +472,14 @@ export default {
       });
     } catch (err) {
       await refundCredit(env, identity.sub);
-      return new Response(`Gemini request failed: ${err.message}`, { status: 502 });
+      console.log(`scan: Gemini request failed: ${err.message}`);
+      return new Response('Extraction service unavailable', { status: 502 });
     }
 
     if (!geminiRes.ok) {
       await refundCredit(env, identity.sub);
-      const errText = await geminiRes.text();
-      return new Response(`Gemini error: ${errText}`, { status: geminiRes.status });
+      console.log(`scan: Gemini ${geminiRes.status}: ${await geminiRes.text()}`);
+      return new Response('Extraction service unavailable', { status: 502 });
     }
 
     let geminiData;
@@ -469,7 +487,8 @@ export default {
       geminiData = await geminiRes.json();
     } catch (err) {
       await refundCredit(env, identity.sub);
-      return new Response(`Gemini returned an unreadable response: ${err.message}`, { status: 502 });
+      console.log(`scan: unreadable Gemini response: ${err.message}`);
+      return new Response('Extraction service unavailable', { status: 502 });
     }
 
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
