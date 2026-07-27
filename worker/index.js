@@ -208,6 +208,87 @@ async function addCredits(env, userId, amount) {
   ]);
 }
 
+/** Credits a purchase exactly once. Returns true if this delivery was the one
+ * that applied it, false if it was a retry of an event already processed. */
+async function addPurchasedCredits(env, userId, amount, eventId) {
+  const now = new Date().toISOString();
+  const [logResult] = await env.DB.batch([
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO credit_log (user_id, delta, reason, event_id, created_at) VALUES (?, ?, 'purchase', ?, ?)"
+    ).bind(userId, amount, eventId, now),
+    // changes() refers to the INSERT above: 0 on a duplicate event, so the
+    // balance is left alone.
+    env.DB.prepare(
+      'UPDATE credits SET balance = balance + ?, updated_at = ? WHERE user_id = ? AND changes() = 1'
+    ).bind(amount, now, userId),
+  ]);
+  return logResult.meta.changes === 1;
+}
+
+/** RevenueCat webhook. Authenticated by RC_WEBHOOK_SECRET, never by the app's
+ * idToken or app key — the two surfaces share no credentials.
+ *
+ * Returns 200 for anything it deliberately ignores: RevenueCat retries non-2xx
+ * on a backoff for hours, so rejecting an event type we will never process
+ * would manufacture a retry storm. Only genuine failures return 5xx.
+ */
+async function handleWebhook(request, env) {
+  if (!env.RC_WEBHOOK_SECRET) {
+    console.log('rc-webhook: RC_WEBHOOK_SECRET not configured');
+    return new Response('Not configured', { status: 503 });
+  }
+  if (request.headers.get('authorization') !== env.RC_WEBHOOK_SECRET) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response('Invalid JSON', { status: 400 });
+  }
+
+  const event = body?.event;
+  if (!event || typeof event !== 'object') {
+    return new Response('Missing event', { status: 400 });
+  }
+
+  // Consumables arrive as NON_RENEWING_PURCHASE. TEST, CANCELLATION, REFUND
+  // and anything added later are acknowledged and dropped.
+  if (event.type !== 'NON_RENEWING_PURCHASE') {
+    return new Response('Ignored', { status: 200 });
+  }
+
+  const userId = event.app_user_id;
+  const eventId = event.id;
+  const credits = CREDIT_PACKS[event.product_id];
+
+  if (!userId || !eventId) {
+    return new Response('Missing app_user_id or id', { status: 400 });
+  }
+  if (!credits) {
+    // Acknowledged, not retried: an unknown product will never become known.
+    console.log(`rc-webhook: unknown product ${event.product_id} for ${userId}`);
+    return new Response('Unknown product', { status: 200 });
+  }
+
+  try {
+    await ensureUser(env, userId, '', null);
+    const applied = await addPurchasedCredits(env, userId, credits, eventId);
+    const balance = await getBalance(env, userId);
+    console.log(
+      `rc-webhook: ${userId} ${event.product_id} +${credits} applied=${applied} balance=${balance}`
+    );
+    return new Response(JSON.stringify({ applied, balance }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err) {
+    // A real failure — let RevenueCat retry this one.
+    console.log(`rc-webhook: crediting failed for ${userId}: ${err.message}`);
+    return new Response('Crediting failed', { status: 500 });
+  }
+}
+
 export default {
   async fetch(request, env) {
     // CORS 预检
@@ -223,6 +304,11 @@ export default {
 
     if (request.method !== 'POST') {
       return new Response('Method not allowed', { status: 405 });
+    }
+
+    // Separate surface, separate credential: RevenueCat only.
+    if (new URL(request.url).pathname === '/rc-webhook') {
+      return handleWebhook(request, env);
     }
 
     // Optional app key check. Enable with: wrangler secret put APP_SECRET
