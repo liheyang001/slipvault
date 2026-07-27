@@ -112,19 +112,24 @@ async function ensureUser(env, userId, email, ip) {
 
   const grant = await signupGrantFor(env, ip);
   const now = new Date().toISOString();
-  await env.DB.batch([
+  const statements = [
     env.DB.prepare(
       'INSERT OR IGNORE INTO credits (user_id, email, balance, updated_at) VALUES (?, ?, ?, ?)'
     ).bind(userId, email, grant, now),
     env.DB.prepare(
       "INSERT INTO credit_log (user_id, delta, reason, created_at) SELECT ?, ?, 'signup', ? WHERE changes() = 1"
     ).bind(userId, grant, now),
-  ]);
+  ];
+  // Same changes() chain: only record the IP if this call is the one that
+  // actually created the user, or a concurrent duplicate would count twice.
   if (ip) {
-    await env.DB.prepare('INSERT INTO signup_ips (ip, created_at) VALUES (?, ?)')
-      .bind(ip, now)
-      .run();
+    statements.push(
+      env.DB.prepare(
+        'INSERT INTO signup_ips (ip, created_at) SELECT ?, ? WHERE changes() = 1'
+      ).bind(ip, now)
+    );
   }
+  await env.DB.batch(statements);
 }
 
 async function getBalance(env, userId) {
