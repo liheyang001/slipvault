@@ -13,7 +13,13 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
-import { extractInvoiceData, ExtractedInvoiceData, InsufficientCreditsError } from '../services/claude';
+import {
+  extractInvoiceData,
+  ExtractedInvoiceData,
+  InsufficientCreditsError,
+  RateLimitedError,
+  ImageTooLargeError,
+} from '../services/claude';
 import { processInvoiceImage } from '../services/imageProcessor';
 import { insertInvoice, findDuplicateInvoice, updateInvoice, getUserRooms, saveUserRoom } from '../services/database';
 import { scheduleWarrantyReminder } from '../services/notifications';
@@ -38,6 +44,8 @@ export default function ReviewScreen({ route, navigation }: Props) {
   const [extracted, setExtracted] = useState<ExtractedInvoiceData | null>(null);
   const [networkError, setNetworkError] = useState(false);
   const [outOfCredits, setOutOfCredits] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [imageTooLarge, setImageTooLarge] = useState(false);
 
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState('');
@@ -80,6 +88,8 @@ export default function ReviewScreen({ route, navigation }: Props) {
     setLoading(true);
     setNetworkError(false);
     setOutOfCredits(false);
+    setRateLimited(false);
+    setImageTooLarge(false);
     startProgress();
 
     try {
@@ -110,6 +120,10 @@ export default function ReviewScreen({ route, navigation }: Props) {
       finishProgress();
       if (err instanceof InsufficientCreditsError) {
         setOutOfCredits(true);
+      } else if (err instanceof RateLimitedError) {
+        setRateLimited(true);
+      } else if (err instanceof ImageTooLargeError) {
+        setImageTooLarge(true);
       } else {
         setNetworkError(true);
       }
@@ -275,6 +289,34 @@ export default function ReviewScreen({ route, navigation }: Props) {
           </View>
         )}
 
+        {/* Rate limited — transient, retrying shortly works */}
+        {!loading && rateLimited && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Slow down a moment</Text>
+            <Text style={styles.errorSub}>
+              You've scanned a lot in a short time. Your photo is saved — try again in a minute,
+              or save it for later and it will be picked up automatically.
+            </Text>
+            <TouchableOpacity style={styles.laterBtn} onPress={runExtraction}>
+              <Text style={styles.laterBtnText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Image too large — permanent for this photo, retrying cannot help */}
+        {!loading && imageTooLarge && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Photo too large</Text>
+            <Text style={styles.errorSub}>
+              This image is too big to process. Retake it a little further back, or crop it before
+              importing.
+            </Text>
+            <TouchableOpacity style={styles.laterBtn} onPress={() => navigation.goBack()}>
+              <Text style={styles.laterBtnText}>Retake Photo</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Network error */}
         {!loading && networkError && (
           <View style={styles.errorBox}>
@@ -421,7 +463,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
             <Text style={styles.retakeBtnText}>Retake</Text>
           </TouchableOpacity>
 
-          {!networkError && !outOfCredits && (
+          {!networkError && !outOfCredits && !rateLimited && !imageTooLarge && (
             <TouchableOpacity
               style={[styles.saveBtn, (!extracted || saving) && styles.saveBtnDisabled]}
               onPress={handleSave}

@@ -12,6 +12,23 @@ export interface ExtractedInvoiceData {
   category: string;
 }
 
+/** The Worker throttled this user (10 scans/min, 100/hour). Transient. */
+export class RateLimitedError extends Error {
+  constructor() {
+    super('Too many scans in a short time.');
+    this.name = 'RateLimitedError';
+  }
+}
+
+/** The image exceeded the Worker's 4MB cap. Permanent for this photo —
+ * retrying the same file will always fail. */
+export class ImageTooLargeError extends Error {
+  constructor() {
+    super('That photo is too large to process.');
+    this.name = 'ImageTooLargeError';
+  }
+}
+
 /** Thrown by extractInvoiceData when the Worker reports a 402 (out of credits). */
 export class InsufficientCreditsError extends Error {
   constructor(public balance: number) {
@@ -87,6 +104,14 @@ export async function extractInvoiceData(
   if (response.status === 402) {
     const body = await response.json().catch(() => ({ balance: 0 }));
     throw new InsufficientCreditsError(Number(body.balance) || 0);
+  }
+
+  if (response.status === 429) {
+    throw new RateLimitedError();
+  }
+
+  if (response.status === 413) {
+    throw new ImageTooLargeError();
   }
 
   if (!response.ok) {

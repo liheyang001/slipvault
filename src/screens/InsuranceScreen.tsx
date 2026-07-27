@@ -20,6 +20,7 @@ import {
   saveAIValuation,
 } from '../services/database';
 import { estimateItemValues } from '../services/claude';
+import { getStoredUser, signInWithGoogle } from '../services/auth';
 import {
   totalContentsValue,
   summarizeByRoom,
@@ -139,8 +140,22 @@ export default function InsuranceScreen({ query = '', onValuationState }: Props)
     }
   }
 
+  /** Valuation requires a signed-in identity (the Worker verifies it).
+   * Prompts inline rather than failing with a misleading network error. */
+  async function ensureSignedIn(): Promise<boolean> {
+    if (getStoredUser()) return true;
+    try {
+      const user = await signInWithGoogle();
+      return user !== null;
+    } catch {
+      Alert.alert('Sign-in failed', 'Please check your connection and try again.');
+      return false;
+    }
+  }
+
   async function handleAIValuate() {
     if (highValue.length === 0 || valuating) return;
+    if (!(await ensureSignedIn())) return;
     const batch = highValue.slice(0, 40); // worker cap
     setValuating(true);
     try {
