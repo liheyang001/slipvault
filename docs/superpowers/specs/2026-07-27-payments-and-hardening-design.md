@@ -186,8 +186,13 @@ sub-project 3, yet HomeScreen still blocks users at 20 invoices with an
 | Removed from `database.ts` | Generation |
 |---|---|
 | `getScansUsedThisMonth`, `incrementScanCount` | monthly scan quota (already uncalled) |
-| `FREE_INVOICE_LIMIT`, `getInvoiceCount` | 20 free invoices |
+| `FREE_SCAN_LIMIT` | free scan count (already uncalled) |
+| `FREE_INVOICE_LIMIT` | 20 free invoices |
 | `isProUser`, `setProUser` | Pro flag (a local boolean — trivially spoofable) |
+
+`getInvoiceCount` is **kept**: HomeScreen's backup nudge uses the same total
+(`${totalCount} invoices not backed up yet`), which has nothing to do with
+quotas. Only the `setQuota(...)` line consuming it is removed.
 
 Call sites removed: HomeScreen's `quota` state, quota banner and add-invoice
 block; ManualEntry's free-limit block; PaywallScreen's usage meter. Afterwards
