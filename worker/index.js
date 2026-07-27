@@ -20,6 +20,18 @@ const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models
 
 const GOOGLE_JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 const SIGNUP_CREDITS = 20;
+const MAX_IMAGE_BASE64 = 4 * 1024 * 1024; // ~20x a compressed 800px scan
+const SCANS_PER_MINUTE = 10;
+const SCANS_PER_HOUR = 100;
+const SIGNUPS_PER_IP_PER_DAY = 3;
+
+// Credits are derived from the product ID here, never from the request body,
+// so a forged webhook can only ever buy a pack that exists.
+const CREDIT_PACKS = {
+  credits_30: 30,
+  credits_100: 100,
+  credits_300: 300,
+};
 
 const PROMPT = `Analyze this image and extract invoice/receipt data.
 
@@ -90,20 +102,29 @@ async function verifyIdToken(request, env) {
 
 // ─── Credit ledger (D1) ──────────────────────────────────────────────────
 
-/** Ensures a credits row exists for this user, bootstrapping to SIGNUP_CREDITS if new. */
-async function ensureUser(env, userId, email) {
+/** Ensures a credits row exists, bootstrapping new users with the grant the
+ * caller's IP still qualifies for. Records the signup IP for that cap. */
+async function ensureUser(env, userId, email, ip) {
+  const existing = await env.DB.prepare('SELECT 1 FROM credits WHERE user_id = ?')
+    .bind(userId)
+    .first();
+  if (existing) return;
+
+  const grant = await signupGrantFor(env, ip);
   const now = new Date().toISOString();
-  // Batched (one transaction): the log insert only fires if the INSERT OR
-  // IGNORE actually created a row, via SQLite's changes() referring to the
-  // immediately-preceding statement in this same batch/transaction.
   await env.DB.batch([
     env.DB.prepare(
       'INSERT OR IGNORE INTO credits (user_id, email, balance, updated_at) VALUES (?, ?, ?, ?)'
-    ).bind(userId, email, SIGNUP_CREDITS, now),
+    ).bind(userId, email, grant, now),
     env.DB.prepare(
       "INSERT INTO credit_log (user_id, delta, reason, created_at) SELECT ?, ?, 'signup', ? WHERE changes() = 1"
-    ).bind(userId, SIGNUP_CREDITS, now),
+    ).bind(userId, grant, now),
   ]);
+  if (ip) {
+    await env.DB.prepare('INSERT INTO signup_ips (ip, created_at) VALUES (?, ?)')
+      .bind(ip, now)
+      .run();
+  }
 }
 
 async function getBalance(env, userId) {
@@ -137,6 +158,37 @@ async function refundCredit(env, userId) {
       "INSERT INTO credit_log (user_id, delta, reason, created_at) VALUES (?, 1, 'scan_refund', ?)"
     ).bind(userId, now),
   ]);
+}
+
+/** True when this user has scanned too often recently. Counts existing
+ * credit_log rows — the ledger is already a request log, so no new table. */
+async function scanRateExceeded(env, userId) {
+  const now = Date.now();
+  const minuteAgo = new Date(now - 60_000).toISOString();
+  const hourAgo = new Date(now - 3_600_000).toISOString();
+  const row = await env.DB.prepare(
+    `SELECT
+       SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS last_minute,
+       COUNT(*) AS last_hour
+     FROM credit_log
+     WHERE user_id = ? AND reason = 'scan' AND created_at > ?`
+  )
+    .bind(minuteAgo, userId, hourAgo)
+    .first();
+  return (row?.last_minute ?? 0) >= SCANS_PER_MINUTE || (row?.last_hour ?? 0) >= SCANS_PER_HOUR;
+}
+
+/** How many credits a brand-new account gets. Accounts beyond the daily
+ * per-IP cap are still created and fully usable — they just start at zero. */
+async function signupGrantFor(env, ip) {
+  if (!ip) return SIGNUP_CREDITS;
+  const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS c FROM signup_ips WHERE ip = ? AND created_at > ?'
+  )
+    .bind(ip, dayAgo)
+    .first();
+  return (row?.c ?? 0) >= SIGNUPS_PER_IP_PER_DAY ? 0 : SIGNUP_CREDITS;
 }
 
 async function addCredits(env, userId, amount) {
