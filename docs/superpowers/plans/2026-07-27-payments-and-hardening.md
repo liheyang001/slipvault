@@ -1238,3 +1238,22 @@ Expected: a cloud build completes and yields an installable APK. Install it on t
 - **Placeholder scan:** none — every step carries complete code or an exact command. Values the user must generate (`RC_WEBHOOK_SECRET`, the RevenueCat key) are marked human-required with the command that produces them.
 - **Type consistency:** `addPurchasedCredits` (new, kept) is distinct from `addCredits` (deleted in Task 9); `ensureUser` gains a fourth parameter `ip` in Task 2 Step 3 and every call site is updated in Task 4 Steps 4–5 and Task 3 Step 2; `getCreditBalance` returns `Promise<number>`, matching `balance: number | null` state and the `waitForCredits(before: number)` signature; `PurchasesPackage` is imported as a type in both `purchases.ts` and `PaywallScreen.tsx`.
 - **Ordering safety:** the backdoor survives until Task 9, so every intermediate commit leaves a working way to obtain credits. Phase A is deployable and verifiable before any client work begins.
+
+---
+
+## Amendments found during execution
+
+**Task 8 (Paywall) must require sign-in before purchase.** Code review of the
+webhook surfaced a real money-loss path: the ledger is keyed on the Google
+`sub` from `verifyIdToken`, but nothing currently stops an unsigned-in user
+from opening the Paywall and buying. RevenueCat would then report an anonymous
+`app_user_id` (`$RCAnonymousID:...`), and the credits would land under a key no
+authenticated session can ever read — money taken, balance unreachable, no
+error surfaced.
+
+The Worker now refuses and loudly logs such purchases rather than burying them
+(commit on Task 3), but that only converts a silent loss into a recoverable
+one. The actual fix belongs in the Paywall: before calling `buyPack`, confirm
+`getStoredUser()` returns a user, and if not, run the sign-in flow first and
+abort the purchase if the user cancels. This mirrors the gate `CameraScreen`
+already applies before scanning.
