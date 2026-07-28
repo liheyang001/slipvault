@@ -160,7 +160,7 @@ export default function ManualEntryScreen({ route, navigation }: Props) {
       });
 
       if (warrantyMonths > 0) {
-        scheduleWarrantyReminder(invoice.id, trimmedName, date.trim(), warrantyMonths)
+        scheduleWarrantyReminder(invoice.id, trimmedName, isoDate, warrantyMonths)
           .then((notifId) => {
             if (notifId) updateInvoice(invoice.id, { warrantyNotifId: notifId });
           })
