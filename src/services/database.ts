@@ -395,8 +395,6 @@ export function setSetting(key: string, value: string): void {
 // ─── Free plan quota ─────────────────────────────────────────────────────────
 
 /** Free plan: up to this many stored invoices. Pro = unlimited. */
-export const FREE_INVOICE_LIMIT = 20;
-
 /** Total invoices currently stored (pending ones occupy slots too). */
 export function getInvoiceCount(): number {
   const row = db.getFirstSync<{ c: number }>('SELECT COUNT(*) as c FROM invoices');
@@ -410,33 +408,6 @@ export function countInvoicesCreatedAfter(iso: string): number {
     [iso]
   );
   return row?.c ?? 0;
-}
-
-export const FREE_SCAN_LIMIT = 15;
-
-export function isProUser(): boolean {
-  return getSetting('isPro', 'false') === 'true';
-}
-
-export function setProUser(value: boolean): void {
-  setSetting('isPro', value ? 'true' : 'false');
-}
-
-export function getScansUsedThisMonth(): number {
-  const now = new Date();
-  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const storedMonth = getSetting('scanMonth', '');
-  if (storedMonth !== thisMonth) {
-    setSetting('scanMonth', thisMonth);
-    setSetting('scanCount', '0');
-    return 0;
-  }
-  return parseInt(getSetting('scanCount', '0'), 10);
-}
-
-export function incrementScanCount(): void {
-  const used = getScansUsedThisMonth();
-  setSetting('scanCount', String(used + 1));
 }
 
 // ─── Backup / restore ────────────────────────────────────────────────────────

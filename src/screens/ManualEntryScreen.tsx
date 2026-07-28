@@ -22,9 +22,6 @@ import {
   getUserCategories,
   getUserRooms,
   saveUserRoom,
-  isProUser,
-  getInvoiceCount,
-  FREE_INVOICE_LIMIT,
 } from '../services/database';
 import { scheduleWarrantyReminder } from '../services/notifications';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
@@ -133,19 +130,6 @@ export default function ManualEntryScreen({ route, navigation }: Props) {
     const isoDate = parseNZDate(date);
     if (!isoDate) {
       Alert.alert('Invalid date', 'Use the DD/MM/YYYY format, e.g. 05/11/2024.');
-      return;
-    }
-
-    // Free plan gate (double-check here in case the count changed since the FAB)
-    if (!isProUser() && getInvoiceCount() >= FREE_INVOICE_LIMIT) {
-      Alert.alert(
-        'Free limit reached',
-        `The free plan stores up to ${FREE_INVOICE_LIMIT} invoices. Upgrade to Pro for unlimited invoices.`,
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'See Pro', onPress: () => navigation.navigate('Paywall') },
-        ]
-      );
       return;
     }
 
