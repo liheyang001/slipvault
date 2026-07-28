@@ -13,7 +13,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { RootStackParamList } from '../types/navigation';
 import { getCreditBalance, waitForBalanceIncrease } from '../services/claude';
-import { getCreditPacks, buyPack, isUserCancelled } from '../services/purchases';
+import { getCreditPacks, buyPack, isUserCancelled, linkPurchasesToUser } from '../services/purchases';
 import { getStoredUser, signInWithGoogle } from '../services/auth';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Paywall'>;
@@ -62,36 +62,58 @@ export default function PaywallScreen() {
     }, [refresh])
   );
 
-  /** Credits are keyed to the Google account. Buying while signed out would
-   * charge the user and strand the credits under an anonymous ID, so this
-   * gate runs before the store sheet ever opens. */
-  async function ensureSignedIn(): Promise<boolean> {
-    if (getStoredUser()) return true;
-    try {
-      const user = await signInWithGoogle();
-      if (user) return true;
-      return false;
-    } catch {
-      Alert.alert('Sign-in failed', 'Please check your connection and try again.');
-      return false;
+  /** Credits are keyed to the Google account, and RevenueCat must be told that
+   * same account id before a purchase — otherwise it reports an anonymous
+   * buyer and the server refuses to credit it. Linking is idempotent, so this
+   * runs on every purchase rather than only at the moment of signing in. */
+  async function ensureLinkedIdentity(): Promise<boolean> {
+    let user = getStoredUser();
+    if (!user) {
+      try {
+        user = await signInWithGoogle();
+      } catch {
+        Alert.alert('Sign-in failed', 'Please check your connection and try again.');
+        return false;
+      }
+      if (!user) return false;
     }
+    await linkPurchasesToUser(user.id);
+    return true;
   }
 
   async function handleBuy(pack: PurchasesPackage) {
     if (busyId) return;
-    if (!(await ensureSignedIn())) return;
-
-    const before = balance ?? 0;
+    // Claimed before the first await: sign-in can take seconds, and the button
+    // would otherwise stay live for a second tap.
     setBusyId(pack.identifier);
     try {
+      if (!(await ensureLinkedIdentity())) return;
+
+      // A trustworthy baseline is required to tell whether the purchase landed.
+      let before = balance;
+      if (before === null) {
+        try {
+          before = await getCreditBalance();
+          setBalance(before);
+        } catch {
+          before = null;
+        }
+      }
+
       await buyPack(pack);
-      // Payment succeeded. The credits themselves arrive via RevenueCat's
-      // webhook, so watch the balance rather than assuming.
-      const updated = await waitForBalanceIncrease(before);
+
+      // Payment succeeded. The credits arrive via RevenueCat's webhook, so
+      // watch the balance rather than assuming.
+      const expected = PACK_CREDITS[pack.product.identifier] ?? 1;
+      const updated =
+        before === null ? null : await waitForBalanceIncrease(before, expected);
+
       if (updated !== null) {
         setBalance(updated);
         Alert.alert('Credits added', `You now have ${updated} scan credits.`);
       } else {
+        // Either no baseline to compare against, or they have not landed yet.
+        // Both are "check again shortly", never "confirmed".
         await refresh();
         Alert.alert(
           'Payment received',

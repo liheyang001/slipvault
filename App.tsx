@@ -5,8 +5,8 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initDatabase, getSetting, setSetting, getAllInvoices } from './src/services/database';
 import { initNotifications, cancelScheduledNotification, scheduleMonthlyReminder } from './src/services/notifications';
-import { configureAuth } from './src/services/auth';
-import { configurePurchases } from './src/services/purchases';
+import { configureAuth, getStoredUser } from './src/services/auth';
+import { configurePurchases, linkPurchasesToUser } from './src/services/purchases';
 import { RootStackParamList } from './src/types/navigation';
 import HomeScreen from './src/screens/HomeScreen';
 import CameraScreen from './src/screens/CameraScreen';
@@ -25,6 +25,14 @@ try { initDatabase(); } catch {}
 try { initNotifications(); } catch {}
 try { configureAuth(); } catch {}
 try { configurePurchases(); } catch {}
+// Link an already-signed-in user to RevenueCat. Without this, anyone who
+// signed in on a previous version buys under an anonymous ID and the server
+// refuses to credit it — signInWithGoogle only links at the moment of signing
+// in, which never runs again for them.
+try {
+  const storedUser = getStoredUser();
+  if (storedUser) linkPurchasesToUser(storedUser.id).catch(() => {});
+} catch {}
 
 // Decided once, before mount — changing Stack.Navigator's initialRouteName after
 // mount has no effect, so this must not be a hook/state value. Guarded like the

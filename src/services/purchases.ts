@@ -17,7 +17,8 @@ export async function linkPurchasesToUser(googleSub: string): Promise<void> {
   try {
     await Purchases.logIn(googleSub);
   } catch {
-    // Best-effort at sign-in; the Paywall verifies identity again before buying.
+    // Best-effort here; the Paywall links again before every purchase, which
+    // is the call that actually has to succeed.
   }
 }
 

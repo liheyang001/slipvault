@@ -149,18 +149,24 @@ export async function getCreditBalance(): Promise<number> {
   return data.balance;
 }
 
-/** Polls until the balance rises above `before`, or gives up. Returns the new
- * balance, or null on timeout. Null means "not landed yet", never "lost" — a
- * purchase credits the ledger server-side and its webhook is retried. */
+/** Polls until the balance reaches at least `before + minIncrease`, or gives
+ * up. Returns the new balance, or null on timeout.
+ *
+ * The threshold is the full expected amount, not merely "went up": a partial
+ * or unrelated change must not be reported as this purchase landing. Null
+ * means "not landed yet", never "lost" — the ledger is credited server-side
+ * and the webhook is retried. */
 export async function waitForBalanceIncrease(
   before: number,
+  minIncrease: number,
   attempts = 5
 ): Promise<number | null> {
+  const target = before + minIncrease;
   for (let i = 0; i < attempts; i++) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     try {
       const balance = await getCreditBalance();
-      if (balance > before) return balance;
+      if (balance >= target) return balance;
     } catch {
       // Transient failure — keep polling.
     }
