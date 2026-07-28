@@ -6,121 +6,163 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { PurchasesPackage } from 'react-native-purchases';
 import { RootStackParamList } from '../types/navigation';
-import {
-  isProUser,
-  setProUser,
-  getInvoiceCount,
-  FREE_INVOICE_LIMIT,
-} from '../services/database';
+import { getCreditBalance, waitForBalanceIncrease } from '../services/claude';
+import { getCreditPacks, buyPack, isUserCancelled } from '../services/purchases';
+import { getStoredUser, signInWithGoogle } from '../services/auth';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Paywall'>;
 
-// Display only — the real price is configured in Play Console (Phase 2 / RevenueCat).
-const PRICE_LABEL = '$2.99 / month';
-
-const BENEFITS: [string, string, string][] = [
-  ['∞', 'Unlimited invoices', `Free plan stores up to ${FREE_INVOICE_LIMIT} — Pro removes the cap`],
-  ['🛡️', 'Full insurance archive', 'Document every room without limits'],
-  ['☁️', 'Cloud backup', 'Coming soon — survive a lost or broken phone'],
-  ['❤️', 'Support development', 'Keep Slipvault independent and privacy-first'],
-];
+/** Credits per pack, keyed by store product ID. Display only — the ledger is
+ * credited server-side from the same mapping, which is the authoritative one. */
+const PACK_CREDITS: Record<string, number> = {
+  credits_30: 30,
+  credits_100: 100,
+  credits_300: 300,
+};
+const BEST_VALUE_ID = 'credits_100';
 
 export default function PaywallScreen() {
   const navigation = useNavigation<Nav>();
-  const [pro, setPro] = useState(false);
-  const [count, setCount] = useState(0);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [packs, setPacks] = useState<PurchasesPackage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setBalance(await getCreditBalance());
+    } catch {
+      setBalance(null);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      setPro(isProUser());
-      setCount(getInvoiceCount());
-    }, [])
+      let cancelled = false;
+      (async () => {
+        setLoading(true);
+        await refresh();
+        try {
+          const available = await getCreditPacks();
+          if (!cancelled) setPacks(available);
+        } catch {
+          if (!cancelled) setPacks([]);
+        }
+        if (!cancelled) setLoading(false);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [refresh])
   );
 
-  function handleSubscribe() {
-    // Phase 2 will launch the real purchase flow (RevenueCat / Play Billing).
-    Alert.alert(
-      'Almost there',
-      'Payments are being set up and will arrive in the next update. Thanks for your interest!'
-    );
+  /** Credits are keyed to the Google account. Buying while signed out would
+   * charge the user and strand the credits under an anonymous ID, so this
+   * gate runs before the store sheet ever opens. */
+  async function ensureSignedIn(): Promise<boolean> {
+    if (getStoredUser()) return true;
+    try {
+      const user = await signInWithGoogle();
+      if (user) return true;
+      return false;
+    } catch {
+      Alert.alert('Sign-in failed', 'Please check your connection and try again.');
+      return false;
+    }
   }
 
-  /** Dev-only escape hatch: long-press the button to toggle Pro for testing gates. */
-  function handleDevToggle() {
-    if (!__DEV__) return;
-    const next = !isProUser();
-    setProUser(next);
-    setPro(next);
-    Alert.alert('DEV', `Pro is now ${next ? 'ON' : 'OFF'}`);
-  }
+  async function handleBuy(pack: PurchasesPackage) {
+    if (busyId) return;
+    if (!(await ensureSignedIn())) return;
 
-  const used = Math.min(count, FREE_INVOICE_LIMIT);
+    const before = balance ?? 0;
+    setBusyId(pack.identifier);
+    try {
+      await buyPack(pack);
+      // Payment succeeded. The credits themselves arrive via RevenueCat's
+      // webhook, so watch the balance rather than assuming.
+      const updated = await waitForBalanceIncrease(before);
+      if (updated !== null) {
+        setBalance(updated);
+        Alert.alert('Credits added', `You now have ${updated} scan credits.`);
+      } else {
+        await refresh();
+        Alert.alert(
+          'Payment received',
+          'Your credits will arrive shortly. Tap Refresh balance in a moment to check.'
+        );
+      }
+    } catch (err) {
+      if (!isUserCancelled(err)) {
+        Alert.alert('Purchase failed', 'No charge was made. Please try again.');
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.heroIcon}>🛡️</Text>
-      <Text style={styles.title}>Slipvault Pro</Text>
+      <Text style={styles.heroIcon}>🪙</Text>
+      <Text style={styles.title}>Scan credits</Text>
       <Text style={styles.subtitle}>
-        Your whole home, documented and insurance-ready.
+        One credit per AI scan. Adding items by hand is always free.
       </Text>
 
-      {/* Usage meter (free users) */}
-      {!pro && (
-        <View style={styles.usageBox}>
-          <View style={styles.usageTrack}>
-            <View
-              style={[styles.usageFill, { width: `${(used / FREE_INVOICE_LIMIT) * 100}%` }]}
-            />
-          </View>
-          <Text style={styles.usageText}>
-            {count} of {FREE_INVOICE_LIMIT} free invoices used
-          </Text>
-        </View>
-      )}
-
-      {pro && (
-        <View style={styles.proBadge}>
-          <Text style={styles.proBadgeText}>✓ You're Pro — thank you!</Text>
-        </View>
-      )}
-
-      {/* Benefits */}
-      <View style={styles.benefits}>
-        {BENEFITS.map(([icon, title, sub]) => (
-          <View key={title} style={styles.benefitRow}>
-            <Text style={styles.benefitIcon}>{icon}</Text>
-            <View style={styles.benefitText}>
-              <Text style={styles.benefitTitle}>{title}</Text>
-              <Text style={styles.benefitSub}>{sub}</Text>
-            </View>
-          </View>
-        ))}
+      <View style={styles.balanceBox}>
+        <Text style={styles.balanceLabel}>YOUR BALANCE</Text>
+        <Text style={styles.balanceValue}>{balance === null ? '—' : balance}</Text>
       </View>
 
-      {/* CTA */}
-      {!pro && (
-        <>
-          <TouchableOpacity
-            style={styles.cta}
-            onPress={handleSubscribe}
-            onLongPress={handleDevToggle}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.ctaText}>Subscribe · {PRICE_LABEL}</Text>
-          </TouchableOpacity>
-          <Text style={styles.finePrint}>
-            Cancel anytime in Google Play. Your existing invoices always stay accessible, even
-            without Pro.
-          </Text>
-        </>
+      {loading ? (
+        <ActivityIndicator style={styles.loader} color="#60a5fa" />
+      ) : packs.length === 0 ? (
+        <Text style={styles.unavailable}>
+          Credit packs are unavailable right now. Check your connection and try again.
+        </Text>
+      ) : (
+        <View style={styles.packs}>
+          {packs.map((pack) => {
+            const productId = pack.product.identifier;
+            const credits = PACK_CREDITS[productId];
+            const isBest = productId === BEST_VALUE_ID;
+            return (
+              <TouchableOpacity
+                key={pack.identifier}
+                style={[styles.pack, isBest && styles.packBest]}
+                onPress={() => handleBuy(pack)}
+                disabled={busyId !== null}
+                activeOpacity={0.85}
+              >
+                <View style={styles.packMain}>
+                  <Text style={styles.packCredits}>
+                    {credits ? `${credits} credits` : pack.product.title}
+                  </Text>
+                  {isBest && <Text style={styles.packBadge}>BEST VALUE</Text>}
+                </View>
+                {busyId === pack.identifier ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.packPrice}>{pack.product.priceString}</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       )}
 
+      <TouchableOpacity style={styles.refreshBtn} onPress={refresh} disabled={busyId !== null}>
+        <Text style={styles.refreshText}>Refresh balance</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.laterBtn} onPress={() => navigation.goBack()}>
-        <Text style={styles.laterText}>{pro ? 'Close' : 'Maybe later'}</Text>
+        <Text style={styles.laterText}>Maybe later</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -128,10 +170,10 @@ export default function PaywallScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { padding: 28, paddingTop: 36, alignItems: 'center', gap: 0 },
+  content: { padding: 28, paddingTop: 36, alignItems: 'center' },
 
-  heroIcon: { fontSize: 56 },
-  title: { fontSize: 28, fontWeight: '800', color: '#fff', marginTop: 10, letterSpacing: -0.5 },
+  heroIcon: { fontSize: 52 },
+  title: { fontSize: 26, fontWeight: '800', color: '#fff', marginTop: 10, letterSpacing: -0.5 },
   subtitle: {
     fontSize: 14,
     color: '#94a3b8',
@@ -140,49 +182,60 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  usageBox: { width: '100%', marginTop: 24, gap: 8 },
-  usageTrack: {
-    height: 8,
+  balanceBox: {
+    marginTop: 24,
+    alignItems: 'center',
     backgroundColor: '#1e293b',
-    borderRadius: 4,
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+  },
+  balanceLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#60a5fa',
+  },
+  balanceValue: { fontSize: 40, fontWeight: '800', color: '#fff', marginTop: 4 },
+
+  loader: { marginTop: 30 },
+  unavailable: {
+    marginTop: 30,
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+
+  packs: { width: '100%', marginTop: 26, gap: 12 },
+  pack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1e293b',
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  packBest: { borderColor: '#2563eb' },
+  packMain: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  packCredits: { fontSize: 16, fontWeight: '700', color: '#f1f5f9' },
+  packBadge: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#93c5fd',
+    backgroundColor: '#1d4ed8',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     overflow: 'hidden',
   },
-  usageFill: { height: '100%', backgroundColor: '#f59e0b', borderRadius: 4 },
-  usageText: { fontSize: 12, color: '#cbd5e1', textAlign: 'center', fontWeight: '600' },
+  packPrice: { fontSize: 16, fontWeight: '800', color: '#fff' },
 
-  proBadge: {
-    marginTop: 24,
-    backgroundColor: '#065f46',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  proBadgeText: { color: '#6ee7b7', fontWeight: '700', fontSize: 14 },
-
-  benefits: { width: '100%', marginTop: 28, gap: 18 },
-  benefitRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  benefitIcon: { fontSize: 24, width: 34, textAlign: 'center' },
-  benefitText: { flex: 1, gap: 2 },
-  benefitTitle: { fontSize: 15, fontWeight: '700', color: '#f1f5f9' },
-  benefitSub: { fontSize: 12, color: '#94a3b8', lineHeight: 17 },
-
-  cta: {
-    width: '100%',
-    backgroundColor: '#2563eb',
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginTop: 30,
-  },
-  ctaText: { color: '#fff', fontWeight: '800', fontSize: 16 },
-  finePrint: {
-    fontSize: 11,
-    color: '#64748b',
-    textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 16,
-  },
-
-  laterBtn: { marginTop: 18, padding: 10 },
+  refreshBtn: { marginTop: 24, padding: 10 },
+  refreshText: { color: '#60a5fa', fontSize: 14, fontWeight: '700' },
+  laterBtn: { marginTop: 4, padding: 10 },
   laterText: { color: '#94a3b8', fontSize: 14, fontWeight: '600' },
 });
