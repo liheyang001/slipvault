@@ -1,5 +1,6 @@
 import type * as GoogleSigninModule from '@react-native-google-signin/google-signin';
 import { getSetting, setSetting } from './database';
+import { linkPurchasesToUser } from './purchases';
 
 /**
  * Lazily require the SDK so importing this file never touches the native
@@ -66,6 +67,7 @@ export async function signInWithGoogle(): Promise<AuthUser | null> {
     name: response.data.user.name ?? '',
   };
   setSetting('authUser', JSON.stringify(user));
+  await linkPurchasesToUser(user.id);
   return user;
 }
 
