@@ -105,7 +105,7 @@ function buildPDFHtml(invoices: Invoice[]): string {
   <div class="summary">
     Total spent: <span>$${totalSum.toFixed(2)}</span>
   </div>
-  <footer>Slipvault &nbsp;·&nbsp; All data stored locally on your device</footer>
+  <footer>Vesta &nbsp;·&nbsp; All data stored locally on your device</footer>
 </body>
 </html>`;
 }
@@ -248,7 +248,7 @@ function buildRoomPDFHtml(invoices: Invoice[], roomName: string): string {
   <div class="summary">
     Declared value: <span>$${totalSum.toFixed(2)}</span>
   </div>
-  <footer>Slipvault &nbsp;·&nbsp; All data stored locally on your device</footer>
+  <footer>Vesta &nbsp;·&nbsp; All data stored locally on your device</footer>
 </body>
 </html>`;
 }

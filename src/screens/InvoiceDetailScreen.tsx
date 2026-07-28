@@ -285,13 +285,13 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     try {
       await FileSystem.copyAsync({ from: sourceUri, to: cacheUri });
       const asset = await MediaLibrary.createAssetAsync(cacheUri);
-      // Group into a "Slipvault" album so it's easy to find; skip silently if not allowed.
+      // Group into a "Vesta" album so it's easy to find; skip silently if not allowed.
       try {
-        const album = await MediaLibrary.getAlbumAsync('Slipvault');
+        const album = await MediaLibrary.getAlbumAsync('Vesta');
         if (album) await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-        else await MediaLibrary.createAlbumAsync('Slipvault', asset, false);
+        else await MediaLibrary.createAlbumAsync('Vesta', asset, false);
       } catch {}
-      Alert.alert('Saved', 'Photo saved to your gallery (Slipvault album).');
+      Alert.alert('Saved', 'Photo saved to your gallery (Vesta album).');
     } catch (e: any) {
       Alert.alert('Save failed', e?.message ?? 'Could not save the photo.');
     } finally {

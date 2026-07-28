@@ -109,7 +109,7 @@ export default function SettingsScreen() {
     if (busy) return;
     Alert.alert(
       'Restore from backup',
-      'Pick a Slipvault backup zip. Invoices with the same ID will be overwritten; everything else is merged.',
+      'Pick a Vesta backup zip. Invoices with the same ID will be overwritten; everything else is merged.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -326,7 +326,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.version}>Slipvault v1.0.0</Text>
+      <Text style={styles.version}>Vesta v1.0.0</Text>
     </SafeAreaView>
   );
 }

@@ -46,7 +46,7 @@ export async function createBackup(): Promise<number> {
   zip.file('data.json', JSON.stringify(data));
 
   const zipB64 = await zip.generateAsync({ type: 'base64' });
-  const fileName = `slipvault_backup_${new Date().toISOString().slice(0, 10)}.zip`;
+  const fileName = `vesta_backup_${new Date().toISOString().slice(0, 10)}.zip`;
   const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
   await FileSystem.writeAsStringAsync(fileUri, zipB64, {
     encoding: FileSystem.EncodingType.Base64,
@@ -75,7 +75,7 @@ export async function restoreBackup(): Promise<{ invoices: number } | null> {
 
   const dataEntry = zip.file('data.json');
   if (!dataEntry) {
-    throw new Error('This file is not a Slipvault backup (data.json missing).');
+    throw new Error('This file is not a Vesta backup (data.json missing).');
   }
   const data = JSON.parse(await dataEntry.async('string')) as BackupData;
 

@@ -12,13 +12,13 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Onboarding'>;
 const PAGES = [
   {
     icon: '📋',
-    title: 'Welcome to Slipvault',
+    title: 'Welcome to Vesta',
     body: 'Turn your receipts into a bulletproof home contents insurance record.',
   },
   {
     icon: '📷',
     title: 'Snap it, or add it by hand',
-    body: 'Scan a receipt and Slipvault reads the vendor, date, and amount automatically. Lost the receipt, or it was a gift? Add the item manually — a photo of the item itself is proof enough.',
+    body: 'Scan a receipt and Vesta reads the vendor, date, and amount automatically. Lost the receipt, or it was a gift? Add the item manually — a photo of the item itself is proof enough.',
   },
   {
     icon: '📦',
