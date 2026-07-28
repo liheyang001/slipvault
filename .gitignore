@@ -43,6 +43,7 @@ yarn-error.*
 
 # secrets
 google-service-account.json
+SECRETS.local.md
 
 # Claude Code
 .claude/
