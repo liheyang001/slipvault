@@ -1,5 +1,4 @@
 import Purchases, { PurchasesPackage } from 'react-native-purchases';
-import { getCreditBalance } from './claude';
 
 /** Configure once at app start. No-op without a key so builds that have no
  * RevenueCat configuration still run. */
@@ -39,20 +38,4 @@ export async function buyPack(pack: PurchasesPackage): Promise<void> {
 /** True when the user dismissed the store sheet rather than hitting an error. */
 export function isUserCancelled(err: unknown): boolean {
   return !!(err as { userCancelled?: boolean })?.userCancelled;
-}
-
-/** Polls until the balance rises above `before`, or gives up. Returns the new
- * balance, or null on timeout — the webhook retries, so null means "not yet",
- * never "lost". */
-export async function waitForCredits(before: number, attempts = 5): Promise<number | null> {
-  for (let i = 0; i < attempts; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    try {
-      const balance = await getCreditBalance();
-      if (balance > before) return balance;
-    } catch {
-      // Transient failure — keep polling.
-    }
-  }
-  return null;
 }

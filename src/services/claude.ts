@@ -149,6 +149,25 @@ export async function getCreditBalance(): Promise<number> {
   return data.balance;
 }
 
+/** Polls until the balance rises above `before`, or gives up. Returns the new
+ * balance, or null on timeout. Null means "not landed yet", never "lost" — a
+ * purchase credits the ledger server-side and its webhook is retried. */
+export async function waitForBalanceIncrease(
+  before: number,
+  attempts = 5
+): Promise<number | null> {
+  for (let i = 0; i < attempts; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      const balance = await getCreditBalance();
+      if (balance > before) return balance;
+    } catch {
+      // Transient failure — keep polling.
+    }
+  }
+  return null;
+}
+
 /**
  * Dev-only stand-in for a real purchase — adds credits directly via the
  * Worker's credits_dev_topup action. Delete this once RevenueCat ships.
