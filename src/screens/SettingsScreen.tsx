@@ -16,7 +16,13 @@ import { RootStackParamList } from '../types/navigation';
 import { getSetting, setSetting, getAllInvoices } from '../services/database';
 import { scheduleMonthlyReminder, cancelScheduledNotification } from '../services/notifications';
 import { createBackup, restoreBackup } from '../services/backup';
-import { getStoredUser, signInWithGoogle, signOutGoogle, type AuthUser } from '../services/auth';
+import {
+  getStoredUser,
+  signInWithGoogle,
+  signOutGoogle,
+  describeSignInError,
+  type AuthUser,
+} from '../services/auth';
 import { devTopUpCredits, getCreditBalance } from '../services/claude';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
@@ -155,8 +161,8 @@ export default function SettingsScreen() {
     try {
       const signedIn = await signInWithGoogle();
       if (signedIn) setUser(signedIn);
-    } catch {
-      Alert.alert('Sign-in failed', 'Please check your connection and try again.');
+    } catch (err) {
+      Alert.alert('Sign-in failed', describeSignInError(err));
     } finally {
       setBusy(null);
     }

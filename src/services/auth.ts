@@ -71,6 +71,30 @@ export async function signInWithGoogle(): Promise<AuthUser | null> {
   return user;
 }
 
+/** Turns a Google Sign-In failure into something a human can act on.
+ * The SDK's numeric codes are the only signal that distinguishes a
+ * misconfiguration from a network blip, and they are otherwise invisible. */
+export function describeSignInError(err: unknown): string {
+  const e = err as { code?: string | number; message?: string };
+  const code = String(e?.code ?? '');
+  switch (code) {
+    case '10':
+    case 'DEVELOPER_ERROR':
+      return 'Configuration mismatch (DEVELOPER_ERROR / 10). The package name or signing certificate does not match an Android OAuth client in Google Cloud.';
+    case '7':
+    case 'NETWORK_ERROR':
+      return 'No network connection reached Google (NETWORK_ERROR / 7).';
+    case '12500':
+      return 'Sign-in failed inside Play Services (12500). Often a stale Google Play Services install.';
+    case '12501':
+      return 'Sign-in was cancelled.';
+    case '8':
+      return 'Internal error in Play Services (8). Try again.';
+    default:
+      return `Unexpected error${code ? ` (code ${code})` : ''}: ${e?.message ?? String(err)}`;
+  }
+}
+
 /** Signs out of the SDK (errors swallowed) and clears the stored user. */
 export async function signOutGoogle(): Promise<void> {
   try {
