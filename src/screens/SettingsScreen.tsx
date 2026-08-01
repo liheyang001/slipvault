@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Constants from 'expo-constants';
 import {
   View,
   Text,
@@ -26,6 +27,12 @@ import {
 import { devTopUpCredits, getCreditBalance } from '../services/claude';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
+
+/** Android's versionCode / iOS' buildNumber — the only value that distinguishes
+ * two builds of the same version, which matters when diagnosing "am I running
+ * the build I think I am". */
+const buildNumber =
+  Constants.expoConfig?.android?.versionCode ?? Constants.expoConfig?.ios?.buildNumber ?? '';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 
@@ -332,7 +339,12 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.version}>Vesta v1.0.0</Text>
+      {/* Read from the manifest so it can never drift from app.json, and show
+          the build number too — version alone cannot tell two builds apart. */}
+      <Text style={styles.version}>
+        Vesta v{Constants.expoConfig?.version ?? '?'}
+        {buildNumber ? ` (${buildNumber})` : ''}
+      </Text>
     </SafeAreaView>
   );
 }
