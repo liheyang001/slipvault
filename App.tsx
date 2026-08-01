@@ -6,7 +6,11 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initDatabase, getSetting, setSetting, getAllInvoices } from './src/services/database';
 import { initNotifications, cancelScheduledNotification, scheduleMonthlyReminder } from './src/services/notifications';
 import { configureAuth, getStoredUser } from './src/services/auth';
-import { configurePurchases, linkPurchasesToUser } from './src/services/purchases';
+import {
+  configurePurchases,
+  linkPurchasesToUser,
+  syncPendingPurchases,
+} from './src/services/purchases';
 import { RootStackParamList } from './src/types/navigation';
 import HomeScreen from './src/screens/HomeScreen';
 import CameraScreen from './src/screens/CameraScreen';
@@ -31,7 +35,13 @@ try { configurePurchases(); } catch {}
 // in, which never runs again for them.
 try {
   const storedUser = getStoredUser();
-  if (storedUser) linkPurchasesToUser(storedUser.id).catch(() => {});
+  if (storedUser) {
+    // Link first, then sync: a purchase recovered before the identity is set
+    // would be filed under an anonymous id the server refuses to credit.
+    linkPurchasesToUser(storedUser.id)
+      .then(() => syncPendingPurchases())
+      .catch(() => {});
+  }
 } catch {}
 
 // Decided once, before mount — changing Stack.Navigator's initialRouteName after

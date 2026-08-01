@@ -13,7 +13,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { RootStackParamList } from '../types/navigation';
 import { getCreditBalance, waitForBalanceIncrease } from '../services/claude';
-import { getCreditPacks, buyPack, isUserCancelled, linkPurchasesToUser } from '../services/purchases';
+import {
+  getCreditPacks,
+  buyPack,
+  isUserCancelled,
+  linkPurchasesToUser,
+  syncPendingPurchases,
+} from '../services/purchases';
 import { getStoredUser, signInWithGoogle } from '../services/auth';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Paywall'>;
@@ -47,6 +53,10 @@ export default function PaywallScreen() {
       let cancelled = false;
       (async () => {
         setLoading(true);
+        // Recover any purchase the store completed but RevenueCat never saw.
+        // This screen is where someone lands when credits did not arrive, so
+        // it is the right place to retry before showing them a balance.
+        await syncPendingPurchases();
         await refresh();
         try {
           const available = await getCreditPacks();

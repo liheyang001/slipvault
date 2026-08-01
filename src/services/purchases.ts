@@ -40,3 +40,23 @@ export async function buyPack(pack: PurchasesPackage): Promise<void> {
 export function isUserCancelled(err: unknown): boolean {
   return !!(err as { userCancelled?: boolean })?.userCancelled;
 }
+
+/** Re-reports purchases the store has recorded but RevenueCat has not seen.
+ *
+ * RevenueCat learns about a purchase from the SDK, not from Google: the SDK
+ * posts the purchase token after payment, and RevenueCat then verifies it.
+ * If that post fails — a dropped connection, a backgrounded app, a process
+ * kill during the store's own confirmation delay — the money is taken, Google
+ * records the order, and RevenueCat never hears about it. Nothing recovers on
+ * its own, so the credits would be lost permanently.
+ *
+ * Calling this on launch and before showing prices closes that hole: anything
+ * stranded gets re-submitted, verified, and lands as a normal purchase webhook. */
+export async function syncPendingPurchases(): Promise<void> {
+  if (!process.env.EXPO_PUBLIC_REVENUECAT_KEY) return;
+  try {
+    await Purchases.syncPurchases();
+  } catch {
+    // Best-effort: a failed sync is retried on the next launch or Paywall open.
+  }
+}
