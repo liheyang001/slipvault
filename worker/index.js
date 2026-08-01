@@ -196,17 +196,6 @@ async function signupGrantFor(env, ip) {
   return (row?.c ?? 0) >= SIGNUPS_PER_IP_PER_DAY ? 0 : SIGNUP_CREDITS;
 }
 
-async function addCredits(env, userId, amount) {
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare(
-      'UPDATE credits SET balance = balance + ?, updated_at = ? WHERE user_id = ?'
-    ).bind(amount, now, userId),
-    env.DB.prepare(
-      "INSERT INTO credit_log (user_id, delta, reason, created_at) VALUES (?, ?, 'dev_topup', ?)"
-    ).bind(userId, amount, now),
-  ]);
-}
 
 /** Credits a purchase exactly once. Returns true if this delivery was the one
  * that applied it, false if it was a retry of an event already processed. */
@@ -392,31 +381,6 @@ export default {
       });
     }
 
-    // ─── Action: credits_dev_topup ───────────────────────────────────────
-    // Interim stand-in for a real purchase (RevenueCat webhook). DELETE THIS
-    // ACTION once RevenueCat purchases are wired up — it lets anyone with a
-    // valid Google account and the app secret give themselves free credits.
-    if (body.action === 'credits_dev_topup') {
-      if (!env.APP_SECRET || request.headers.get('x-app-key') !== env.APP_SECRET) {
-        return new Response('Unauthorized', { status: 401 });
-      }
-      let identity;
-      try {
-        identity = await verifyIdToken(request, env);
-      } catch {
-        return new Response('Unauthorized', { status: 401 });
-      }
-      const amount = Number(body.amount);
-      if (!Number.isInteger(amount) || amount <= 0 || amount > 1000) {
-        return new Response('amount must be an integer between 1 and 1000', { status: 400 });
-      }
-      await ensureUser(env, identity.sub, identity.email, request.headers.get('cf-connecting-ip'));
-      await addCredits(env, identity.sub, amount);
-      const balance = await getBalance(env, identity.sub);
-      return new Response(JSON.stringify({ balance }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
 
     // ─── Default action: invoice extraction from photo (credit-gated) ─────
     const { imageBase64, mimeType = 'image/jpeg' } = body;

@@ -25,7 +25,7 @@ import {
   describeSignInError,
   type AuthUser,
 } from '../services/auth';
-import { devTopUpCredits, getCreditBalance } from '../services/claude';
+import { getCreditBalance } from '../services/claude';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
 
@@ -191,14 +191,6 @@ export default function SettingsScreen() {
     ]);
   }
 
-  async function handleDevTopUp() {
-    try {
-      const newBalance = await devTopUpCredits(20);
-      setBalance(newBalance);
-    } catch {
-      Alert.alert('Top-up failed', 'Please try again.');
-    }
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -259,14 +251,6 @@ export default function SettingsScreen() {
                 <Text style={styles.getMoreText}>Get more</Text>
               </TouchableOpacity>
             </View>
-            {__DEV__ && (
-              <TouchableOpacity style={styles.devRow} onPress={handleDevTopUp} activeOpacity={0.7}>
-                <Text style={styles.devText}>+20 credits · testing only</Text>
-                <View style={styles.devChip}>
-                  <Text style={styles.devChipText}>DEV</Text>
-                </View>
-              </TouchableOpacity>
-            )}
             <TouchableOpacity onPress={handleSignOut} activeOpacity={0.7}>
               <Text style={styles.signOutText}>Sign out</Text>
             </TouchableOpacity>
@@ -438,26 +422,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   getMoreText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  devRow: {
-    marginTop: 12,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  devText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
-  devChip: {
-    backgroundColor: '#f3e8ff',
-    borderRadius: 999,
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-  },
-  devChipText: { fontSize: 10, fontWeight: '700', color: '#7c3aed' },
   signOutText: {
     textAlign: 'center',
     fontSize: 13,

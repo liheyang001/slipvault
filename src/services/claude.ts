@@ -174,19 +174,3 @@ export async function waitForBalanceIncrease(
   return null;
 }
 
-/**
- * Dev-only stand-in for a real purchase — adds credits directly via the
- * Worker's credits_dev_topup action. Delete this once RevenueCat ships.
- */
-export async function devTopUpCredits(amount: number): Promise<number> {
-  const response = await fetch(getProxyUrl(), {
-    method: 'POST',
-    headers: await buildHeaders(),
-    body: JSON.stringify({ action: 'credits_dev_topup', amount }),
-  });
-  if (!response.ok) {
-    throw new Error(`Top-up failed (${response.status}).`);
-  }
-  const data = (await response.json()) as CreditBalance;
-  return data.balance;
-}
