@@ -9,6 +9,7 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -201,6 +202,9 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Scrolls: the sections outgrew the screen, putting the version line —
+          and anything added later — permanently out of reach. */}
+      <ScrollView contentContainerStyle={styles.scrollContent}>
       {/* Account */}
       <View style={styles.accountWrap}>
         <Text style={styles.sectionLabel}>Account</Text>
@@ -345,12 +349,14 @@ export default function SettingsScreen() {
         Vesta v{Constants.expoConfig?.version ?? '?'}
         {buildNumber ? ` (${buildNumber})` : ''}
       </Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
+  scrollContent: { paddingBottom: 24 },
 
   section: {
     backgroundColor: '#fff',

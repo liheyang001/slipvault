@@ -1,4 +1,10 @@
-import Purchases, { PurchasesPackage } from 'react-native-purchases';
+import Purchases, { PRODUCT_CATEGORY, PurchasesStoreProduct } from 'react-native-purchases';
+
+/** The store product ids, cheapest first. Fetched directly rather than through
+ * an offering because the offering payload carries no product type, leaving the
+ * SDK to default to SUBSCRIPTION — which finds nothing, since these are
+ * one-time products. Asking for them by id lets us state the type outright. */
+const CREDIT_PACK_IDS = ['credits_30', 'credits_100', 'credits_300'];
 
 /** Configure once at app start. No-op without a key so builds that have no
  * RevenueCat configuration still run. */
@@ -24,16 +30,18 @@ export async function linkPurchasesToUser(googleSub: string): Promise<void> {
 
 /** The credit packs on offer, cheapest first. Prices come from the store, so
  * they are already localised and reflect any live promotion. */
-export async function getCreditPacks(): Promise<PurchasesPackage[]> {
-  const offerings = await Purchases.getOfferings();
-  const packages = offerings.current?.availablePackages ?? [];
-  return [...packages].sort((a, b) => a.product.price - b.product.price);
+export async function getCreditPacks(): Promise<PurchasesStoreProduct[]> {
+  const products = await Purchases.getProducts(
+    CREDIT_PACK_IDS,
+    PRODUCT_CATEGORY.NON_SUBSCRIPTION
+  );
+  return [...products].sort((a, b) => a.price - b.price);
 }
 
 /** Launches the store purchase sheet. Resolves once payment completes —
  * credits arrive separately via the webhook. */
-export async function buyPack(pack: PurchasesPackage): Promise<void> {
-  await Purchases.purchasePackage(pack);
+export async function buyPack(product: PurchasesStoreProduct): Promise<void> {
+  await Purchases.purchaseStoreProduct(product);
 }
 
 /** True when the user dismissed the store sheet rather than hitting an error. */

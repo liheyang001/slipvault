@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { PurchasesPackage } from 'react-native-purchases';
+import type { PurchasesStoreProduct } from 'react-native-purchases';
 import { RootStackParamList } from '../types/navigation';
 import { getCreditBalance, waitForBalanceIncrease } from '../services/claude';
 import {
@@ -36,7 +36,7 @@ const BEST_VALUE_ID = 'credits_100';
 export default function PaywallScreen() {
   const navigation = useNavigation<Nav>();
   const [balance, setBalance] = useState<number | null>(null);
-  const [packs, setPacks] = useState<PurchasesPackage[]>([]);
+  const [packs, setPacks] = useState<PurchasesStoreProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -91,7 +91,7 @@ export default function PaywallScreen() {
     return true;
   }
 
-  async function handleBuy(pack: PurchasesPackage) {
+  async function handleBuy(pack: PurchasesStoreProduct) {
     if (busyId) return;
     // Claimed before the first await: sign-in can take seconds, and the button
     // would otherwise stay live for a second tap.
@@ -114,7 +114,7 @@ export default function PaywallScreen() {
 
       // Payment succeeded. The credits arrive via RevenueCat's webhook, so
       // watch the balance rather than assuming.
-      const expected = PACK_CREDITS[pack.product.identifier] ?? 1;
+      const expected = PACK_CREDITS[pack.identifier] ?? 1;
       const updated =
         before === null ? null : await waitForBalanceIncrease(before, expected);
 
@@ -161,12 +161,12 @@ export default function PaywallScreen() {
       ) : (
         <View style={styles.packs}>
           {packs.map((pack) => {
-            const productId = pack.product.identifier;
+            const productId = pack.identifier;
             const credits = PACK_CREDITS[productId];
             const isBest = productId === BEST_VALUE_ID;
             return (
               <TouchableOpacity
-                key={pack.identifier}
+                key={productId}
                 style={[styles.pack, isBest && styles.packBest]}
                 onPress={() => handleBuy(pack)}
                 disabled={busyId !== null}
@@ -174,14 +174,14 @@ export default function PaywallScreen() {
               >
                 <View style={styles.packMain}>
                   <Text style={styles.packCredits}>
-                    {credits ? `${credits} credits` : pack.product.title}
+                    {credits ? `${credits} credits` : pack.title}
                   </Text>
                   {isBest && <Text style={styles.packBadge}>BEST VALUE</Text>}
                 </View>
-                {busyId === pack.identifier ? (
+                {busyId === productId ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.packPrice}>{pack.product.priceString}</Text>
+                  <Text style={styles.packPrice}>{pack.priceString}</Text>
                 )}
               </TouchableOpacity>
             );
