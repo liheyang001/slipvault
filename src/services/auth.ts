@@ -112,11 +112,25 @@ export async function signOutGoogle(): Promise<void> {
  */
 export async function getIdToken(): Promise<string | null> {
   if (!getStoredUser()) return null;
+  const { GoogleSignin } = sdk();
   try {
-    const { GoogleSignin } = sdk();
     const tokens = await GoogleSignin.getTokens();
     return tokens.idToken ?? null;
   } catch {
-    return null;
+    // Google ID tokens expire after an hour. Once that happens getTokens()
+    // throws, and returning null here would silently strip the Authorization
+    // header — the server then rejects everything and the app looks broken:
+    // the balance shows "—", scans fail, purchases cannot be attributed.
+    // signInSilently() restores the session from the stored credential with
+    // no UI, so the user never sees any of it.
+    try {
+      await GoogleSignin.signInSilently();
+      const tokens = await GoogleSignin.getTokens();
+      return tokens.idToken ?? null;
+    } catch {
+      // The credential is genuinely gone; the caller falls back to signed-out
+      // behaviour and the user is prompted to sign in again when it matters.
+      return null;
+    }
   }
 }
