@@ -218,3 +218,27 @@ Vesta is now a contents-insurance inventory, not just a receipt archive.
       is in the repo but the hosted copy is still the old one
 - [ ] Complete the content rating questionnaire
 - [ ] Fill in the payments profile (bank + tax) — approval takes time, start early
+
+---
+
+## Deploying the privacy policy
+
+The hosted copy is a Cloudflare Pages project, `invoice-reader-privacy`, served
+from `pages-dist/` (gitignored — it is build output, the source of truth is
+`privacy-policy.html` in the repo root).
+
+```bash
+cp privacy-policy.html pages-dist/privacy-policy.html
+cp privacy-policy.html pages-dist/index.html   # so the bare domain isn't a 404
+npx wrangler pages deploy pages-dist --project-name=invoice-reader-privacy --branch=main
+```
+
+`--branch=main` matters: without it, Pages publishes to a per-branch preview
+domain (`feature-rooms.invoice-reader-privacy.pages.dev`) and the production URL
+Play Console points at stays unchanged. On 2026-08-02 that production URL was
+returning "Deployment Not Found" — a dead privacy policy link is an automatic
+review rejection, so verify it after every deploy:
+
+```bash
+curl -sL https://invoice-reader-privacy.pages.dev/privacy-policy.html | grep "Last updated"
+```
