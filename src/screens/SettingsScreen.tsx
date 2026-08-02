@@ -104,8 +104,23 @@ export default function SettingsScreen() {
     }
   }
 
-  async function handleBackup() {
+  /** The backup zip is not encrypted, and it carries the most sensitive things
+   * the app holds: receipt photos, amounts, and serial numbers. Once the share
+   * sheet opens the file is already on its way out, so consent has to be asked
+   * for before it is written, not after. */
+  function handleBackup() {
     if (busy) return;
+    Alert.alert(
+      'Back up now',
+      'The backup file contains your receipt photos, amounts and serial numbers, and is not password-protected. Keep it somewhere private — treat it like the documents themselves.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Continue', onPress: runBackup },
+      ]
+    );
+  }
+
+  async function runBackup() {
     setBusy('backup');
     try {
       const count = await createBackup();
