@@ -5,116 +5,173 @@
 | Field | Value |
 |-------|-------|
 | App Name | Vesta |
-| Tagline | Scan receipts. Archive instantly. |
+| Tagline | Your home, documented before you need it. |
 | Bundle ID | `nz.co.vesta.app` |
-| Version | 1.0.0 |
+| Version | 1.0.1 |
 | Age Rating | 4+ (iOS) / Everyone (Android) |
+
+**Positioning:** a contents-insurance inventory, not a receipt filer. The job it
+does is "prove what you owned, and what it was worth" — the thing nobody has
+ready on the day their house floods or is broken into.
+
+**Every claim below has been checked against what the app actually does.** The
+previous version of this file promised "free forever", "unlimited scans", "no
+account" and "data never leaves your device"; all four became false once
+credits, sign-in and AI extraction shipped. A pricing claim next to an in-app
+product list is a standard Google rejection, and the privacy claim also feeds
+the Data Safety form, where a mismatch is a policy violation.
 
 ---
 
 ## Google Play Store Text
 
+### App title (30 chars max)
+```
+Vesta: Contents Insurance
+```
+
 ### Short Description (80 chars max)
 ```
-Photograph receipts — AI extracts the data, stored on your device only.
+Photograph belongings and receipts — AI builds your insurance inventory.
 ```
 
 ### Full Description (4000 chars max)
 ```
-Vesta turns your phone into a receipt archive. Photograph or import any invoice or receipt, and our AI instantly extracts the vendor, date, amounts, and every line item — no typing required.
+Insurers ask two questions after a fire, a flood, or a break-in: what did you
+own, and what was it worth? Almost nobody can answer. Vesta answers for you.
 
-Everything stays on your device. No account. No cloud. No tracking.
-
-──────────────────────────────
-WHAT SLIPVAULT DOES
-──────────────────────────────
-📸 Scan any receipt — groceries, restaurants, hardware stores, medical bills, and more
-🤖 AI extraction — vendor name, date, category, subtotal, tax, total, and individual items
-🗂️ Auto-categorization — Dining, Groceries, Transport, Healthcare, Shopping, and more
-🔍 Instant search — find receipts by vendor name, item name, date range, or amount
-📊 Export — download a CSV or PDF summary of any selection of receipts
-🔔 Monthly summary notification — optional reminder showing your spending for the month
-📴 Fully offline browsing — no internet needed to view or search your archive
+Photograph a receipt and AI reads the merchant, date, and every line item. No
+receipt? Photograph the item itself — for a gift, a cash purchase, or something
+you have owned for years, a photo plus the details you remember is what a claim
+actually needs.
 
 ──────────────────────────────
-PRIVACY FIRST
+BUILT FOR A CLAIM
 ──────────────────────────────
-Your data never leaves your device. Vesta stores everything in a local SQLite database inside the app's private sandbox — inaccessible to other apps and deleted completely if you uninstall.
-
-The only network request Vesta makes is sending a receipt photo to the AI recognition service to extract text. The image is discarded immediately after processing and is never stored on any server.
-
-No account required. No subscription. No ads. Free forever.
+• Room by room — organise belongings the way an assessor walks through a house
+• Estimated contents value — see what your home is worth today, so you can set
+  your sum insured with a number instead of a guess
+• High-value items — flag the pieces that may need listing separately on your
+  policy, at a threshold you choose
+• Serial numbers and model details — scan a barcode or type them in; these are
+  the fields claim forms ask for
+• Warranty tracking — get reminded before cover expires
+• Export to PDF or CSV — hand your insurer a complete inventory, per room or in
+  full
 
 ──────────────────────────────
-GREAT FOR
+TWO WAYS TO ADD THINGS
 ──────────────────────────────
-• Logging work expenses for reimbursement
-• Tracking household spending across grocery and dining receipts
-• Archiving medical bills for insurance claims
-• Keeping a searchable record before discarding paper receipts
+AI scanning reads a receipt photo and fills everything in for you. It uses one
+scan credit — 20 are included when you sign in, and packs are available if you
+need more.
 
-Stop hoarding paper receipts. Vesta is your private digital archive.
+Adding an item by hand is free and unlimited, forever. Photograph the item, add
+what you know, done. Everything Vesta can do with an item works the same either
+way.
+
+You only pay for the typing you skip.
+
+──────────────────────────────
+WHAT LEAVES YOUR PHONE
+──────────────────────────────
+Your inventory lives on your device. It is not synced to a server and it is not
+shared with anyone.
+
+Two things do leave, and only when you ask:
+• A receipt photo, sent to our AI service to be read. It is processed and
+  discarded, never stored.
+• Your Google account, used to sign in. Scan credits are tied to it so they
+  survive a new phone.
+
+No ads. No tracking. No selling your data — not now, not later.
+
+──────────────────────────────
+GOOD FOR
+──────────────────────────────
+• Getting contents cover right instead of guessing the number
+• Having proof ready before you need it, not scrambling afterwards
+• Documenting a room after a renovation or a big purchase
+• Keeping warranties and serial numbers somewhere you can actually find them
+
+Photograph it once. Have it when it matters.
+```
+
+### Promotional Text (170 chars, can update without new version)
+```
+Build the contents inventory your insurer will ask for. AI reads your receipts;
+adding items by hand is always free.
 ```
 
 ---
 
 ## iOS App Store Text
 
+Not in scope yet — Android ships first. When iOS happens, the description above
+carries over; only these need writing.
+
 ### Subtitle (30 chars max)
 ```
-Scan, extract, archive receipts
+Insurance-ready home inventory
 ```
-
-### Description
-Same as Google Play full description above.
 
 ### Keywords (100 chars max)
 ```
-receipt,invoice,expense,scan,OCR,tracker,bill,AI,archive,spending
-```
-
-### Promotional Text (170 chars, can update without new version)
-```
-Vesta is free — scan unlimited receipts, export to CSV or PDF, and keep everything private on your device. No account needed.
+insurance,contents,inventory,home,receipt,claim,valuables,warranty,serial,proof
 ```
 
 ---
 
-## Screenshots Plan
+## In-app purchases (declare in Play Console)
+
+| Product ID | Name | Credits | Price (NZD) |
+|---|---|---|---|
+| `credits_30` | 30 Scan Credits | 30 | 4.99 |
+| `credits_100` | 100 Scan Credits | 100 | 12.99 |
+| `credits_300` | 300 Scan Credits | 300 | 29.99 |
+
+All consumable, credits do not expire, new accounts receive 20 free.
+
+---
+
+## Data Safety form — what to declare
+
+This must match the privacy policy and the app's actual behaviour. Vesta **does**
+collect data; ticking "no data collected" would be false.
+
+| Data type | Collected | Purpose | Notes |
+|---|---|---|---|
+| Photos | Yes | App functionality | Receipt images sent for AI extraction, discarded after processing |
+| Email address | Yes | App functionality, Account management | From Google Sign-In |
+| User IDs | Yes | App functionality | Google account id — the key the credit balance is stored under |
+| Purchase history | Yes | App functionality | Credit purchases through Google Play |
+
+- Encrypted in transit: **Yes** (HTTPS throughout)
+- Users can request deletion: **Yes** (uninstalling removes local data; account deletion on request)
+- Data is **not** shared with third parties for advertising
+
+---
+
+## Screenshots
 
 ### Recommended scenes (in order)
-1. **Home screen** — invoice list with "Vesta" header, categories, and totals visible
-2. **Receipt scan result** — Invoice Detail showing extracted vendor, date, items, and total
-3. **PDF export** — clean Invoice Report showing multiple receipts and total spent
-4. **Search / Filter** — search results with date range or category filter applied
-5. (Optional) **Settings** — monthly notification toggle, emphasizing privacy-first design
+1. **Insurance view** — estimated contents value, value by room, high-value items
+2. **Item detail** — a scanned item with brand, model, serial, warranty
+3. **Rooms** — belongings grouped by room, with per-room totals
+4. **Home screen** — the inventory list
+5. **PDF export** — a room inventory ready to hand an insurer
+
+The first screenshot should carry the insurance story, not the scanning story:
+scanning is the method, insurance readiness is the reason to install.
 
 ### Android sizes required
 - Phone: minimum 2 screenshots, 1080×1920 px or higher (16:9 or 9:16)
 - Tablet: optional
 
-### Current screenshots taken
-- [x] Home screen (Vesta header, 2 invoices, $76.38 total)
-- [x] Invoice Detail (Sunson Asian Food Market, $66.41)
-- [x] PDF export (2 invoices, Vesta footer)
-- [ ] Search / Filter screen
-- [ ] Settings screen
-
----
-
-## What's Already Done
-
-- [x] App renamed to Vesta everywhere in code
-- [x] Bundle ID: `nz.co.vesta.app` (iOS + Android)
-- [x] Privacy policy hosted: https://invoice-reader-privacy.pages.dev/privacy-policy.html
-- [x] Cloudflare Worker proxy deployed
-- [x] EAS project configured (projectId: 2acb2ded-2f3e-48c3-920d-df1ef7090c8f)
-- [x] First Android AAB built (pre-rename, needs rebuild)
-- [ ] Rebuild Android AAB with Vesta name (`eas build --platform android --profile production`)
-- [ ] Google Play developer account reinstated (appeal in progress)
-- [ ] Create app listing in Google Play Console
-- [ ] Upload AAB and screenshots
-- [ ] Submit for review
+### Status
+- [ ] All screenshots need retaking — the existing ones predate the rename, the
+      rooms and insurance features, and the current UI
+- [ ] Feature graphic (1024×500) — required, never made
 
 ---
 
@@ -122,23 +179,42 @@ Vesta is free — scan unlimited receipts, export to CSV or PDF, and keep everyt
 
 | Field | Value |
 |-------|-------|
-| App name | Vesta |
-| Short description | Photograph receipts — AI extracts the data, stored on your device only. |
+| App name | Vesta: Contents Insurance |
+| Short description | Photograph belongings and receipts — AI builds your insurance inventory. |
 | Category | Finance |
 | Content rating | Everyone |
 | Privacy policy URL | https://invoice-reader-privacy.pages.dev/privacy-policy.html |
 | Contact email | womendemiao@gmail.com |
 | App type | App |
+| Contains ads | No |
+| In-app purchases | Yes — NZ$4.99–NZ$29.99 |
 
 ---
 
-## Release Notes (What's New) — v1.0.0
-```
-Initial release of Vesta.
+## Release Notes (What's New) — v1.0.1
 
-• Photograph or import any receipt — AI extracts vendor, date, amounts, and line items automatically
-• All data stored locally on your device — no account or internet required to browse
-• Search receipts by vendor, item, date range, or amount
-• Export your receipt archive as CSV or PDF
-• Optional monthly spending summary notification
 ```
+Vesta is now a contents-insurance inventory, not just a receipt archive.
+
+• Rooms — organise belongings the way an assessor walks a house
+• Estimated contents value, with AI depreciation on high-value items
+• Serial numbers, brands, models, and barcode scanning
+• Warranty tracking with expiry reminders
+• Export a full or per-room inventory as PDF or CSV
+• Scan credits: 20 free on sign-in, packs available. Adding items by hand
+  stays free and unlimited.
+```
+
+---
+
+## Still to do before submitting
+
+- [ ] Retake all screenshots (see above)
+- [ ] Create the 1024×500 feature graphic
+- [x] Rewrite the privacy policy — done 2026-08-02, now matches this listing and
+      the Data Safety table above
+- [ ] **Re-deploy the privacy policy** to
+      `invoice-reader-privacy.pages.dev` — the rewritten `privacy-policy.html`
+      is in the repo but the hosted copy is still the old one
+- [ ] Complete the content rating questionnaire
+- [ ] Fill in the payments profile (bank + tax) — approval takes time, start early
