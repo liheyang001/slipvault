@@ -213,9 +213,9 @@ Vesta is now a contents-insurance inventory, not just a receipt archive.
 - [ ] Create the 1024×500 feature graphic
 - [x] Rewrite the privacy policy — done 2026-08-02, now matches this listing and
       the Data Safety table above
-- [ ] **Re-deploy the privacy policy** to
-      `invoice-reader-privacy.pages.dev` — the rewritten `privacy-policy.html`
-      is in the repo but the hosted copy is still the old one
+- [x] Re-deploy the privacy policy — done 2026-08-02. The production URL had
+      been returning "Deployment Not Found", so the link Play Console points at
+      was dead; it now serves the rewritten policy.
 - [ ] Complete the content rating questionnaire
 - [ ] Fill in the payments profile (bank + tax) — approval takes time, start early
 
