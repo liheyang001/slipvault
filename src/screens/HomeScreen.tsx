@@ -57,6 +57,7 @@ export default function HomeScreen() {
     { category: string; count: number; taps: number }[]
   >([]);
   const [catModalVisible, setCatModalVisible] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [backupNudge, setBackupNudge] = useState('');
@@ -262,6 +263,13 @@ export default function HomeScreen() {
 
   const canExport = view === 'rooms' ? currentRoom !== '' : invoices.length > 0;
   const exportLabel = view === 'rooms' ? 'Export Room' : 'Export';
+
+  function startAdd(screen: 'Camera' | 'ManualEntry') {
+    // Adding from a room? New entries default to that room.
+    const params = view === 'rooms' && currentRoom ? { defaultRoom: currentRoom } : undefined;
+    setAddModalVisible(false);
+    navigation.navigate(screen, params);
+  }
 
   const spotlightSteps: SpotlightStep[] = [
     {
@@ -582,24 +590,73 @@ export default function HomeScreen() {
         <TouchableOpacity
           ref={fabRef}
           style={styles.fab}
-          onPress={() => {
-            // Adding from a room? New entries default to that room.
-            const params =
-              view === 'rooms' && currentRoom ? { defaultRoom: currentRoom } : undefined;
-            Alert.alert('Add to your inventory', undefined, [
-              { text: '📷 Scan receipt', onPress: () => navigation.navigate('Camera', params) },
-              {
-                text: '✍️ Add manually (no receipt)',
-                onPress: () => navigation.navigate('ManualEntry', params),
-              },
-              { text: 'Cancel', style: 'cancel' },
-            ]);
-          }}
+          onPress={() => setAddModalVisible(true)}
           activeOpacity={0.85}
         >
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       )}
+
+      {/* Add sheet — replaces the OS alert so the two paths can carry an icon and a subtitle */}
+      <Modal
+        visible={addModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBg}
+          activeOpacity={1}
+          onPress={() => setAddModalVisible(false)}
+        >
+          <View style={styles.addCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.addTitle}>Add to your inventory</Text>
+            <Text style={styles.addSubtitle}>
+              {view === 'rooms' && currentRoom
+                ? `Goes into ${capitalizeRoom(currentRoom)}`
+                : 'Two ways in — pick whichever you have to hand'}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.addOption}
+              onPress={() => startAdd('Camera')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.addIcon, styles.addIconPrimary]}>
+                <Ionicons name="camera" size={22} color="#2563eb" />
+              </View>
+              <View style={styles.addOptionBody}>
+                <Text style={styles.addOptionTitle}>Scan a receipt</Text>
+                <Text style={styles.addOptionHint}>Photograph it and AI fills in the details</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.addOption}
+              onPress={() => startAdd('ManualEntry')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.addIcon, styles.addIconNeutral]}>
+                <Ionicons name="create-outline" size={22} color="#475569" />
+              </View>
+              <View style={styles.addOptionBody}>
+                <Text style={styles.addOptionTitle}>Add manually</Text>
+                <Text style={styles.addOptionHint}>No receipt needed — free and unlimited</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.addCancel}
+              onPress={() => setAddModalVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.addCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
     </SafeAreaView>
     {showSpotlight && <SpotlightOverlay steps={spotlightSteps} onDone={finishSpotlight} />}
@@ -718,6 +775,41 @@ const styles = StyleSheet.create({
   modalChipActive: { backgroundColor: '#2563eb' },
   modalChipText: { fontSize: 14, color: '#0f172a', fontWeight: '600' },
   modalChipTextActive: { color: '#fff' },
+
+  // Add sheet
+  addCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    gap: 10,
+  },
+  addTitle: { fontSize: 19, fontWeight: '800', color: '#0f172a' },
+  addSubtitle: { fontSize: 13, color: '#94a3b8', fontWeight: '500', marginTop: -6 },
+  addOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#eef2f6',
+  },
+  addIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addIconPrimary: { backgroundColor: '#eff6ff' },
+  addIconNeutral: { backgroundColor: '#f1f5f9' },
+  addOptionBody: { flex: 1, gap: 2 },
+  addOptionTitle: { fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  addOptionHint: { fontSize: 12, color: '#94a3b8', fontWeight: '500' },
+  addCancel: { alignItems: 'center', paddingVertical: 12, marginTop: 2 },
+  addCancelText: { fontSize: 15, fontWeight: '700', color: '#64748b' },
 
   // Backup nudge banner
   backupBanner: {
