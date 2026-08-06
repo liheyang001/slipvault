@@ -10,6 +10,8 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -26,6 +28,14 @@ import {
   type AuthUser,
 } from '../services/auth';
 import { getCreditBalance } from '../services/claude';
+import {
+  TAX_PRESETS,
+  getTaxLabel,
+  getTaxPercent,
+  setTaxSettings,
+  refreshTaxSettings,
+  type TaxPreset,
+} from '../utils/tax';
 
 const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
 
@@ -44,12 +54,45 @@ export default function SettingsScreen() {
   const [lastBackup, setLastBackup] = useState('');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
+  const [taxLabel, setTaxLabel] = useState('GST');
+  const [taxPercent, setTaxPercent] = useState(15);
+  const [taxModalVisible, setTaxModalVisible] = useState(false);
+  const [customLabel, setCustomLabel] = useState('');
+  const [customPercent, setCustomPercent] = useState('');
 
   useEffect(() => {
     setMonthlyEnabled(getSetting('monthlyNotif', 'false') === 'true');
     setLastBackup(getSetting('lastBackupAt', ''));
     setUser(getStoredUser());
+    setTaxLabel(getTaxLabel());
+    setTaxPercent(getTaxPercent());
   }, []);
+
+  function applyTax(label: string, percent: number) {
+    setTaxSettings(percent, label);
+    setTaxLabel(getTaxLabel());
+    setTaxPercent(getTaxPercent());
+    setTaxModalVisible(false);
+  }
+
+  function applyCustomTax() {
+    const percent = parseFloat(customPercent);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      Alert.alert('Enter a rate between 0 and 100', 'For example, 15 for a 15% rate.');
+      return;
+    }
+    applyTax(customLabel.trim() || 'Tax', percent);
+  }
+
+  function openTaxModal() {
+    // Seed the custom fields with what is in force, so tweaking a rate does not
+    // mean retyping its name.
+    setCustomLabel(taxLabel);
+    setCustomPercent(String(taxPercent));
+    setTaxModalVisible(true);
+  }
+
+  const isPresetActive = (p: TaxPreset) => p.label === taxLabel && p.percent === taxPercent;
 
   // Refresh the balance whenever the screen gains focus (e.g. returning from
   // a scan or the Paywall). Balance is auxiliary info: failures show "—", never an alert.
@@ -148,6 +191,11 @@ export default function SettingsScreen() {
             try {
               const result = await restoreBackup();
               if (result) {
+                // The restore replaced the settings table, so the cached tax
+                // rate is now stale.
+                refreshTaxSettings();
+                setTaxLabel(getTaxLabel());
+                setTaxPercent(getTaxPercent());
                 Alert.alert(
                   'Restore complete',
                   `${result.invoices} invoice${result.invoices !== 1 ? 's' : ''} restored.`
@@ -323,6 +371,97 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Tax</Text>
+
+        <TouchableOpacity style={styles.row} onPress={openTaxModal}>
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle}>Sales Tax</Text>
+            <Text style={styles.rowSub}>
+              Splits an amount into excl./incl. figures. Saved items keep the
+              values they were stored with.
+            </Text>
+          </View>
+          <Text style={styles.taxBadge}>
+            {taxLabel} {taxPercent}%
+          </Text>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Modal
+        visible={taxModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTaxModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBg}
+          activeOpacity={1}
+          onPress={() => setTaxModalVisible(false)}
+        >
+          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>Sales tax</Text>
+            <Text style={styles.modalSub}>
+              Rates and names differ by country. Pick one, or set your own.
+            </Text>
+
+            <ScrollView style={styles.taxList} keyboardShouldPersistTaps="handled">
+              {TAX_PRESETS.map((p) => (
+                <TouchableOpacity
+                  key={`${p.country}-${p.percent}`}
+                  style={[styles.taxRow, isPresetActive(p) && styles.taxRowActive]}
+                  onPress={() => applyTax(p.label, p.percent)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.taxCountry}>{p.country}</Text>
+                  <Text style={[styles.taxRate, isPresetActive(p) && styles.taxRateActive]}>
+                    {p.percent === 0 ? '—' : `${p.label} ${p.percent}%`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.taxCustom}>
+              <Text style={styles.taxCustomLabel}>Custom</Text>
+              <View style={styles.taxCustomRow}>
+                <TextInput
+                  style={[styles.taxInput, styles.taxInputName]}
+                  value={customLabel}
+                  onChangeText={setCustomLabel}
+                  placeholder="VAT"
+                  placeholderTextColor="#9ca3af"
+                  autoCapitalize="characters"
+                  maxLength={12}
+                />
+                <View style={styles.taxPercentWrap}>
+                  <TextInput
+                    style={[styles.taxInput, styles.taxInputPercent]}
+                    value={customPercent}
+                    onChangeText={setCustomPercent}
+                    placeholder="0"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="decimal-pad"
+                    maxLength={5}
+                  />
+                  <Text style={styles.taxPercentSign}>%</Text>
+                </View>
+                <TouchableOpacity style={styles.taxApply} onPress={applyCustomTax}>
+                  <Text style={styles.taxApplyText}>Set</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalClose}
+              onPress={() => setTaxModalVisible(false)}
+            >
+              <Text style={styles.modalCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <View style={styles.section}>
         <Text style={styles.sectionLabel}>Support</Text>
 
         <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Onboarding')}>
@@ -385,6 +524,67 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: '600', color: '#0f172a' },
   rowSub: { fontSize: 12, color: '#94a3b8', lineHeight: 18 },
   chevron: { fontSize: 22, color: '#cbd5e1', fontWeight: '300' },
+
+  // Tax rate picker
+  taxBadge: { fontSize: 14, fontWeight: '700', color: '#2563eb' },
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: { backgroundColor: '#fff', borderRadius: 20, padding: 20, gap: 10 },
+  modalTitle: { fontSize: 19, fontWeight: '800', color: '#0f172a' },
+  modalSub: { fontSize: 13, color: '#94a3b8', fontWeight: '500', marginTop: -6 },
+  // Capped so the custom row stays reachable without scrolling the whole card.
+  taxList: { maxHeight: 260 },
+  taxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  taxRowActive: { backgroundColor: '#eff6ff' },
+  taxCountry: { fontSize: 15, color: '#0f172a', fontWeight: '600' },
+  taxRate: { fontSize: 14, color: '#64748b', fontWeight: '600' },
+  taxRateActive: { color: '#2563eb', fontWeight: '800' },
+  taxCustom: { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 14, gap: 8 },
+  taxCustomLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  taxCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  taxInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+    fontSize: 15,
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  taxInputName: { flex: 1 },
+  taxPercentWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  taxInputPercent: { width: 68, textAlign: 'right' },
+  taxPercentSign: { fontSize: 15, color: '#64748b', fontWeight: '700' },
+  taxApply: {
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taxApplyText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  modalClose: { alignItems: 'center', paddingVertical: 12, marginTop: 2 },
+  modalCloseText: { fontSize: 15, fontWeight: '700', color: '#64748b' },
 
   accountWrap: { marginTop: 24, paddingHorizontal: 16 },
   card: {

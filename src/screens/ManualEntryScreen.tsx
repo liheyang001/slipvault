@@ -27,6 +27,7 @@ import { scheduleWarrantyReminder } from '../services/notifications';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
 import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
 import { formatNZDate, parseNZDate } from '../utils/dates';
+import { exclFromIncl, taxFromIncl, getTaxLabel } from '../utils/tax';
 
 const WARRANTY_OPTIONS = [
   { label: 'None', months: 0 },
@@ -145,8 +146,11 @@ export default function ManualEntryScreen({ route, navigation }: Props) {
         vendor: trimmedName,
         date: isoDate,
         items: [],
-        subtotal: total,
-        tax: 0,
+        // The amount is entered tax-inclusive, so split it the same way the
+        // detail screen does — storing it as the excl. figure with no tax
+        // made every hand-added item read as untaxed.
+        subtotal: exclFromIncl(total),
+        tax: taxFromIncl(total),
         total,
         category: normalizeCategory(category) || 'other',
         room: resolvedRoom,
@@ -222,7 +226,7 @@ export default function ManualEntryScreen({ route, navigation }: Props) {
 
         <View style={styles.rowPair}>
           <View style={[styles.field, styles.rowField]}>
-            <Text style={styles.label}>Amount (Incl. GST) *</Text>
+            <Text style={styles.label}>Amount (Incl. {getTaxLabel()}) *</Text>
             <TextInput
               style={styles.input}
               value={amount}

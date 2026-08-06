@@ -27,7 +27,7 @@ import { Invoice } from '../types/invoice';
 import { RootStackParamList } from '../types/navigation';
 import { DEFAULT_CATEGORIES, capitalize, normalizeCategory } from '../utils/categories';
 import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
-import { exclFromIncl, inclFromExcl } from '../utils/tax';
+import { exclFromIncl, inclFromExcl, getTaxLabel } from '../utils/tax';
 import { formatNZDate, formatNZDateObject, parseNZDate } from '../utils/dates';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
@@ -386,7 +386,8 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
     ]);
   }
 
-  // Keep Excl./Incl. GST in sync while editing (NZ 15% GST); either field can drive the other.
+  // Keep the excl./incl. fields in sync while editing, at the configured tax
+  // rate; either field can drive the other.
   function handleTotalChange(text: string) {
     setEditTotal(text);
     const n = parseFloat(text);
@@ -714,7 +715,7 @@ export default function InvoiceDetailScreen({ route, navigation }: Props) {
                 )}
               </View>
               <View style={[styles.gstCol, !isEditing && styles.pairRight]}>
-                <Text style={styles.label}>Excl. GST</Text>
+                <Text style={styles.label}>Excl. {getTaxLabel()}</Text>
                 {isEditing ? (
                   <TextInput style={[styles.input, styles.gstInput]} value={editSubtotal} onChangeText={handleSubtotalChange}
                     keyboardType="decimal-pad" placeholder="0.00" />

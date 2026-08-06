@@ -26,6 +26,7 @@ import { scheduleWarrantyReminder } from '../services/notifications';
 import { DEFAULT_CATEGORIES, capitalize } from '../utils/categories';
 import { mergeRooms, capitalizeRoom, normalizeRoom, roomIcon } from '../utils/rooms';
 import { formatNZDate, parseNZDate } from '../utils/dates';
+import { getTaxLabel } from '../utils/tax';
 
 const WARRANTY_OPTIONS = [
   { label: 'None', months: 0 },
@@ -424,11 +425,11 @@ export default function ReviewScreen({ route, navigation }: Props) {
               <Text style={styles.sectionTitle}>Amounts</Text>
               <View style={styles.amountRow}>
                 <View>
-                  <Text style={styles.amountLabel}>Excl. GST</Text>
+                  <Text style={styles.amountLabel}>Excl. {getTaxLabel()}</Text>
                   <Text style={styles.amountValue}>${extracted.subtotal.toFixed(2)}</Text>
                 </View>
                 <View style={styles.amountColRight}>
-                  <Text style={styles.amountLabel}>Incl. GST</Text>
+                  <Text style={styles.amountLabel}>Incl. {getTaxLabel()}</Text>
                   <Text style={styles.totalValue}>${extracted.total.toFixed(2)}</Text>
                 </View>
               </View>

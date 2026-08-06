@@ -5,6 +5,7 @@ import { Invoice } from '../types/invoice';
 import { capitalize } from '../utils/categories';
 import { capitalizeRoom } from '../utils/rooms';
 import { formatNZDate } from '../utils/dates';
+import { getTaxLabel } from '../utils/tax';
 
 // ─── CSV ─────────────────────────────────────────────────────────────────────
 
@@ -17,7 +18,8 @@ function escapeCSV(value: string | number | undefined): string {
 }
 
 export async function exportCSV(invoices: Invoice[]): Promise<void> {
-  const header = ['Purchase Date', 'Merchant', 'Category', 'Brand', 'Model', 'Serial', 'Excl. GST', 'GST', 'Incl. GST', 'Items'];
+  const tax = getTaxLabel();
+  const header = ['Purchase Date', 'Merchant', 'Category', 'Brand', 'Model', 'Serial', `Excl. ${tax}`, tax, `Incl. ${tax}`, 'Items'];
   const rows = invoices.map((inv) => {
     const itemsSummary = inv.items
       .map((it) => `${it.name} x${it.quantity}`)
@@ -95,9 +97,9 @@ function buildPDFHtml(invoices: Invoice[]): string {
         <th>Purchase Date</th>
         <th>Merchant</th>
         <th>Category</th>
-        <th class="num">Excl. GST</th>
-        <th class="num">GST</th>
-        <th class="num">Incl. GST</th>
+        <th class="num">Excl. ${getTaxLabel()}</th>
+        <th class="num">${getTaxLabel()}</th>
+        <th class="num">Incl. ${getTaxLabel()}</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
