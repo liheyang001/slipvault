@@ -7,6 +7,12 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "updates": {
+      "url": "https://u.expo.dev/2acb2ded-2f3e-48c3-920d-df1ef7090c8f"
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,7 +21,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "nz.co.vesta.app",
-      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Vesta uses the camera to photograph invoices for recognition.",
         "NSPhotoLibraryUsageDescription": "Vesta accesses your photos to import invoice images.",
@@ -24,7 +29,6 @@
     },
     "android": {
       "package": "nz.co.vesta.app",
-      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

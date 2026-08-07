@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Constants from 'expo-constants';
+import * as Application from 'expo-application';
 import {
   View,
   Text,
@@ -41,9 +42,13 @@ const FEEDBACK_EMAIL = 'liheyang001@hotmail.com';
 
 /** Android's versionCode / iOS' buildNumber — the only value that distinguishes
  * two builds of the same version, which matters when diagnosing "am I running
- * the build I think I am". */
-const buildNumber =
-  Constants.expoConfig?.android?.versionCode ?? Constants.expoConfig?.ios?.buildNumber ?? '';
+ * the build I think I am".
+ *
+ * Read from the native package, not from expoConfig: with EAS' remote version
+ * source the number in app.json is ignored at build time, yet it is still what
+ * expoConfig reports. That made this line answer "1" for every build — exactly
+ * the confusion it was added to prevent. */
+const buildNumber = Application.nativeBuildVersion ?? '';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 
