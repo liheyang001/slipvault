@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initDatabase, getSetting, setSetting, getAllInvoices } from './src/services/database';
+import { runDataMigrations } from './src/services/migrations';
 import { initNotifications, cancelScheduledNotification, scheduleMonthlyReminder } from './src/services/notifications';
 import { configureAuth, getStoredUser } from './src/services/auth';
 import {
@@ -26,6 +27,9 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 // Run before any component renders so DB tables exist when screens query them
 try { initDatabase(); } catch {}
+// After the schema is in place: repairs to existing rows, each guarded by its
+// own completion flag.
+try { runDataMigrations(); } catch {}
 try { initNotifications(); } catch {}
 try { configureAuth(); } catch {}
 try { configurePurchases(); } catch {}
