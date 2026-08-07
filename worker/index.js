@@ -78,6 +78,64 @@ ${JSON.stringify(items)}`;
 // ─── Identity ────────────────────────────────────────────────────────────
 
 /** Verifies the Authorization: Bearer <Google idToken> header. Returns {sub, email} or throws. */
+/**
+ * Names why a token was rejected. Every failure below used to collapse into an
+ * identical bare 401, so an expired token and a misconfigured audience were
+ * indistinguishable from the outside — a session was once spent narrowing that
+ * down by tailing logs, when the server knew the answer all along.
+ */
+function classifyAuthFailure(err) {
+  const message = String(err?.message ?? '');
+  if (message.startsWith('Worker misconfigured')) return 'server-misconfigured';
+  if (message === 'Missing bearer token') return 'no-token';
+  if (message === 'Token missing sub/email') return 'incomplete-token';
+
+  switch (err?.code) {
+    case 'ERR_JWT_EXPIRED':
+      return 'token-expired';
+    case 'ERR_JWT_CLAIM_VALIDATION_FAILED':
+      // The claim that failed is the whole diagnosis: aud means the app and
+      // this Worker disagree about the client ID, iss means it is not a Google
+      // token at all.
+      return err.claim === 'aud'
+        ? 'audience-mismatch'
+        : err.claim === 'iss'
+          ? 'issuer-mismatch'
+          : `claim-invalid:${err.claim ?? 'unknown'}`;
+    case 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED':
+      return 'bad-signature';
+    case 'ERR_JWKS_NO_MATCHING_KEY':
+      return 'unknown-signing-key';
+    case 'ERR_JWS_INVALID':
+    case 'ERR_JWT_INVALID':
+      return 'malformed-token';
+    default:
+      return 'unknown';
+  }
+}
+
+/**
+ * A 401 that carries its reason, in a header and in the log — never in the
+ * body, which clients surface to users.
+ *
+ * The categories are deliberately coarse (nothing about keys, claims values or
+ * accounts) and mirror what RFC 6750 already sanctions putting in an
+ * error_description. A caller learning that its own token expired is not a
+ * disclosure; the Worker staying silent about it costs hours.
+ */
+function unauthorized(err, action) {
+  const reason = classifyAuthFailure(err);
+  console.log(`auth: rejected ${action} — ${reason} (${String(err?.message ?? err)})`);
+  return new Response('Unauthorized', {
+    status: 401,
+    headers: {
+      'X-Auth-Failure': reason,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'X-Auth-Failure',
+    },
+  });
+}
+
 async function verifyIdToken(request, env) {
   if (!env.GOOGLE_WEB_CLIENT_ID) {
     // Fail closed: without a configured audience, jwtVerify would skip the
@@ -330,8 +388,8 @@ export default {
     if (body.action === 'valuate') {
       try {
         await verifyIdToken(request, env);
-      } catch {
-        return new Response('Unauthorized', { status: 401 });
+      } catch (err) {
+        return unauthorized(err, 'valuate');
       }
       const items = body.items;
       if (!Array.isArray(items) || items.length === 0 || items.length > 40) {
@@ -371,8 +429,8 @@ export default {
       let identity;
       try {
         identity = await verifyIdToken(request, env);
-      } catch {
-        return new Response('Unauthorized', { status: 401 });
+      } catch (err) {
+        return unauthorized(err, 'credits_balance');
       }
       await ensureUser(env, identity.sub, identity.email, request.headers.get('cf-connecting-ip'));
       const balance = await getBalance(env, identity.sub);
@@ -394,8 +452,8 @@ export default {
     let identity;
     try {
       identity = await verifyIdToken(request, env);
-    } catch {
-      return new Response('Unauthorized', { status: 401 });
+    } catch (err) {
+      return unauthorized(err, 'scan');
     }
 
     await ensureUser(env, identity.sub, identity.email, request.headers.get('cf-connecting-ip'));
