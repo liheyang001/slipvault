@@ -1,5 +1,5 @@
 import { InvoiceItem } from '../types/invoice';
-import { getIdToken } from './auth';
+import { getIdToken, forceRefreshIdToken } from './auth';
 
 export interface ExtractedInvoiceData {
   isInvoice: boolean;
@@ -43,17 +43,42 @@ function getProxyUrl(): string {
   return process.env.EXPO_PUBLIC_AI_PROXY_URL || FALLBACK_PROXY_URL;
 }
 
-async function buildHeaders(): Promise<Record<string, string>> {
+async function buildHeaders(forceFreshToken = false): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   // Matches the worker's APP_SECRET when configured (light abuse protection).
   if (process.env.EXPO_PUBLIC_APP_KEY) {
     headers['X-App-Key'] = process.env.EXPO_PUBLIC_APP_KEY;
   }
-  const idToken = await getIdToken();
+  const idToken = forceFreshToken ? await forceRefreshIdToken() : await getIdToken();
   if (idToken) {
     headers['Authorization'] = `Bearer ${idToken}`;
   }
   return headers;
+}
+
+/**
+ * POSTs to the proxy, and on a 401 re-authenticates and tries once more.
+ *
+ * getIdToken() already refreshes an expired token, but that decision rests on
+ * the token's own `exp` versus this device's clock. A skewed clock, or an
+ * identity revoked server-side, still produces a 401 the client cannot predict
+ * — and the failure mode is silent and permanent (the balance reads "—" until
+ * the user happens to sign out and back in). One retry on a fresh token turns
+ * that into a blip.
+ */
+async function postToProxy(body: unknown): Promise<Response> {
+  const payload = JSON.stringify(body);
+  const response = await fetch(getProxyUrl(), {
+    method: 'POST',
+    headers: await buildHeaders(),
+    body: payload,
+  });
+  if (response.status !== 401) return response;
+  return fetch(getProxyUrl(), {
+    method: 'POST',
+    headers: await buildHeaders(true),
+    body: payload,
+  });
 }
 
 // ─── AI valuation (contents insurance) ───────────────────────────────────────
@@ -72,11 +97,7 @@ export interface AIEstimate {
 
 /** Ask the AI proxy to estimate current market value for each item, same order. */
 export async function estimateItemValues(items: ValuationInput[]): Promise<AIEstimate[]> {
-  const response = await fetch(getProxyUrl(), {
-    method: 'POST',
-    headers: await buildHeaders(),
-    body: JSON.stringify({ action: 'valuate', items }),
-  });
+  const response = await postToProxy({ action: 'valuate', items });
 
   if (!response.ok) {
     throw new Error(`Valuation service failed (${response.status}).`);
@@ -95,11 +116,7 @@ export async function estimateItemValues(items: ValuationInput[]): Promise<AIEst
 export async function extractInvoiceData(
   imageBase64: string
 ): Promise<ExtractedInvoiceData> {
-  const response = await fetch(getProxyUrl(), {
-    method: 'POST',
-    headers: await buildHeaders(),
-    body: JSON.stringify({ imageBase64, mimeType: 'image/jpeg' }),
-  });
+  const response = await postToProxy({ imageBase64, mimeType: 'image/jpeg' });
 
   if (response.status === 402) {
     const body = await response.json().catch(() => ({ balance: 0 }));
@@ -137,11 +154,7 @@ export interface CreditBalance {
 
 /** Current credit balance for the signed-in user. */
 export async function getCreditBalance(): Promise<number> {
-  const response = await fetch(getProxyUrl(), {
-    method: 'POST',
-    headers: await buildHeaders(),
-    body: JSON.stringify({ action: 'credits_balance' }),
-  });
+  const response = await postToProxy({ action: 'credits_balance' });
   if (!response.ok) {
     throw new Error(`Could not fetch credit balance (${response.status}).`);
   }

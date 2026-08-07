@@ -104,6 +104,70 @@ export async function signOutGoogle(): Promise<void> {
   setSetting('authUser', '');
 }
 
+const B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** Decodes base64url to a byte-per-char string. Hand-rolled because atob is
+ * not guaranteed present across Hermes versions, and getting this wrong would
+ * silently force a re-authentication on every single request. */
+function decodeBase64Url(input: string): string {
+  let out = '';
+  let buffer = 0;
+  let bits = 0;
+  for (const ch of input) {
+    if (ch === '=') break;
+    const value = B64_ALPHABET.indexOf(ch === '-' ? '+' : ch === '_' ? '/' : ch);
+    if (value < 0) continue;
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out += String.fromCharCode((buffer >> bits) & 0xff);
+    }
+  }
+  return out;
+}
+
+/**
+ * Reads a JWT's `exp` without verifying anything — the Worker does the real
+ * verification. This only decides whether to bother refreshing.
+ * Returns null when the token cannot be parsed, which callers treat as expired.
+ */
+function expiryOf(token: string): number | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    // Pulled out by regex rather than JSON.parse: the payload carries the
+    // user's name, and decoding its UTF-8 bytes one char at a time would
+    // mangle any non-ASCII into something JSON.parse could choke on. exp is
+    // always a bare integer.
+    const match = /"exp"\s*:\s*(\d+)/.exec(decodeBase64Url(part));
+    return match ? Number(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when the token is gone, unreadable, or expires within the minute —
+ * the margin keeps a token from dying in flight. */
+function needsRefresh(token: string | null): boolean {
+  if (!token) return true;
+  const exp = expiryOf(token);
+  return exp === null || exp * 1000 <= Date.now() + 60_000;
+}
+
+/** Re-authenticates from the stored credential, with no UI. */
+async function refreshedToken(GoogleSignin: typeof GoogleSigninModule.GoogleSignin) {
+  try {
+    await GoogleSignin.signInSilently();
+    const tokens = await GoogleSignin.getTokens();
+    return tokens.idToken ?? null;
+  } catch {
+    // The credential is genuinely gone; the caller falls back to signed-out
+    // behaviour and the user is prompted to sign in again when it matters.
+    return null;
+  }
+}
+
 /**
  * A fresh Google ID token for the currently signed-in user, or null if not
  * signed in. Never throws — mirrors signInWithGoogle's cancel-never-throws
@@ -113,24 +177,35 @@ export async function signOutGoogle(): Promise<void> {
 export async function getIdToken(): Promise<string | null> {
   if (!getStoredUser()) return null;
   const { GoogleSignin } = sdk();
+
+  let token: string | null = null;
   try {
     const tokens = await GoogleSignin.getTokens();
-    return tokens.idToken ?? null;
+    token = tokens.idToken ?? null;
   } catch {
-    // Google ID tokens expire after an hour. Once that happens getTokens()
-    // throws, and returning null here would silently strip the Authorization
-    // header — the server then rejects everything and the app looks broken:
-    // the balance shows "—", scans fail, purchases cannot be attributed.
-    // signInSilently() restores the session from the stored credential with
-    // no UI, so the user never sees any of it.
-    try {
-      await GoogleSignin.signInSilently();
-      const tokens = await GoogleSignin.getTokens();
-      return tokens.idToken ?? null;
-    } catch {
-      // The credential is genuinely gone; the caller falls back to signed-out
-      // behaviour and the user is prompted to sign in again when it matters.
-      return null;
-    }
+    // Not the common case — see below. Only reached when there is no cached
+    // account at all.
+    return refreshedToken(GoogleSignin);
   }
+
+  // Google ID tokens last an hour, and getTokens() does NOT renew them: on
+  // Android it hands back whatever was cached at sign-in, expired or not,
+  // without raising. Relying on it to throw meant the refresh below never ran
+  // — an hour after signing in every request carried a dead token, the server
+  // 401'd it, and the app just showed "—" with no way out but signing out and
+  // back in. So check the expiry here rather than waiting to be told.
+  if (needsRefresh(token)) {
+    return (await refreshedToken(GoogleSignin)) ?? token;
+  }
+  return token;
+}
+
+/**
+ * Re-authenticates unconditionally and returns the new token. For retrying a
+ * request the server answered with 401 — at that point the cached token is
+ * known bad regardless of what its `exp` claims.
+ */
+export async function forceRefreshIdToken(): Promise<string | null> {
+  if (!getStoredUser()) return null;
+  return refreshedToken(sdk().GoogleSignin);
 }
