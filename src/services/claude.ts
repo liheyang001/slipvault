@@ -1,16 +1,10 @@
-import { InvoiceItem } from '../types/invoice';
 import { getIdToken, forceRefreshIdToken } from './auth';
+import { asExtractedInvoiceData, type ExtractedInvoiceData } from '../utils/extraction';
 
-export interface ExtractedInvoiceData {
-  isInvoice: boolean;
-  vendor: string;
-  date: string;
-  items: InvoiceItem[];
-  subtotal: number;
-  tax: number;
-  total: number;
-  category: string;
-}
+// Defined in utils/extraction so the validation can be tested without dragging
+// in this file's native-module imports. Re-exported: callers import it here.
+export type { ExtractedInvoiceData } from '../utils/extraction';
+export { MalformedExtractionError } from '../utils/extraction';
 
 /** The Worker throttled this user (10 scans/min, 100/hour). Transient. */
 export class RateLimitedError extends Error {
@@ -135,7 +129,12 @@ export async function extractInvoiceData(
     throw new Error(`Recognition service failed (${response.status}). Check your network connection and try again.`);
   }
 
-  const data = await response.json() as ExtractedInvoiceData;
+  const raw: unknown = await response.json().catch(() => null);
+
+  // Belt and braces with the Worker's own check. `as ExtractedInvoiceData` is
+  // erased at runtime, so without this a malformed payload used to become NaN
+  // in the database, and one NaN row turns every total in the app into NaN.
+  const data = asExtractedInvoiceData(raw);
 
   // Ensure subtotal + tax === total (total is ground truth)
   const roundTo2 = (n: number) => Math.round(n * 100) / 100;
@@ -147,6 +146,7 @@ export async function extractInvoiceData(
 
   return data;
 }
+
 
 export interface CreditBalance {
   balance: number;

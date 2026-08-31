@@ -19,6 +19,7 @@ import {
   InsufficientCreditsError,
   RateLimitedError,
   ImageTooLargeError,
+  MalformedExtractionError,
 } from '../services/claude';
 import { processInvoiceImage } from '../services/imageProcessor';
 import { insertInvoice, findDuplicateInvoice, updateInvoice, getUserRooms, saveUserRoom } from '../services/database';
@@ -47,6 +48,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
   const [outOfCredits, setOutOfCredits] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
   const [imageTooLarge, setImageTooLarge] = useState(false);
+  const [malformed, setMalformed] = useState(false);
 
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState('');
@@ -91,6 +93,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
     setOutOfCredits(false);
     setRateLimited(false);
     setImageTooLarge(false);
+    setMalformed(false);
     startProgress();
 
     try {
@@ -125,6 +128,11 @@ export default function ReviewScreen({ route, navigation }: Props) {
         setRateLimited(true);
       } else if (err instanceof ImageTooLargeError) {
         setImageTooLarge(true);
+      } else if (err instanceof MalformedExtractionError) {
+        // The server already refunded the credit for this one, so retrying
+        // costs nothing — say so, rather than showing a network error for
+        // something the network did fine.
+        setMalformed(true);
       } else {
         setNetworkError(true);
       }
@@ -318,6 +326,24 @@ export default function ReviewScreen({ route, navigation }: Props) {
           </View>
         )}
 
+        {/* The model answered but the answer was unusable. The credit was
+            refunded server-side, so retrying is genuinely free. */}
+        {!loading && malformed && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Could not read that scan</Text>
+            <Text style={styles.errorSub}>
+              The scan came back unreadable. Your credit was refunded, so trying again costs
+              nothing — a straighter, better-lit photo usually does it.
+            </Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={runExtraction}>
+              <Text style={styles.retryBtnText}>Try Again</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.laterBtn} onPress={() => navigation.goBack()}>
+              <Text style={styles.laterBtnText}>Retake Photo</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Network error */}
         {!loading && networkError && (
           <View style={styles.errorBox}>
@@ -464,7 +490,7 @@ export default function ReviewScreen({ route, navigation }: Props) {
             <Text style={styles.retakeBtnText}>Retake</Text>
           </TouchableOpacity>
 
-          {!networkError && !outOfCredits && !rateLimited && !imageTooLarge && (
+          {!networkError && !outOfCredits && !rateLimited && !imageTooLarge && !malformed && (
             <TouchableOpacity
               style={[styles.saveBtn, (!extracted || saving) && styles.saveBtnDisabled]}
               onPress={handleSave}
@@ -524,6 +550,16 @@ const styles = StyleSheet.create({
   },
   errorTitle: { fontSize: 16, fontWeight: '700', color: '#92400e' },
   errorSub: { fontSize: 14, color: '#78716c', lineHeight: 20 },
+  // Retry is the primary action here: the credit was refunded, so trying again
+  // is free. Retake sits below it in the existing amber.
+  retryBtn: {
+    marginTop: 8,
+    backgroundColor: '#2563eb',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   laterBtn: {
     marginTop: 8,
     backgroundColor: '#f59e0b',

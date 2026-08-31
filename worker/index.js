@@ -75,6 +75,31 @@ Items:
 ${JSON.stringify(items)}`;
 }
 
+/**
+ * Why an extraction is unusable, or null when it is fine.
+ *
+ * isInvoice:false is a legitimate answer, not a failure — the user photographed
+ * something that is not a receipt, the model said so, and the scan did its job.
+ * Only its numeric fields are left unchecked, since the prompt tells the model
+ * to zero them.
+ *
+ * Everything else must be finite: NaN or a missing total propagates through
+ * every sum in the app, and the row cannot be repaired afterwards because the
+ * receipt it came from is a photo.
+ */
+function extractionProblem(data) {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return 'not an object';
+  if (typeof data.isInvoice !== 'boolean') return 'isInvoice missing';
+  if (!data.isInvoice) return null;
+
+  for (const field of ['total', 'subtotal', 'tax']) {
+    if (!Number.isFinite(data[field])) return `${field} not a finite number`;
+    if (data[field] < 0) return `${field} negative`;
+  }
+  if (!Array.isArray(data.items)) return 'items not an array';
+  return null;
+}
+
 // ─── Identity ────────────────────────────────────────────────────────────
 
 /** Verifies the Authorization: Bearer <Google idToken> header. Returns {sub, email} or throws. */
@@ -520,7 +545,27 @@ export default {
     }
     const json = text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
 
-    return new Response(json, {
+    // The model's output used to be passed straight through. When it came back
+    // malformed or missing fields, the client asserted the type anyway and NaN
+    // reached the database — one such row turns the home screen total into NaN
+    // — while the credit stayed spent. Both are refundable failures.
+    let extracted;
+    try {
+      extracted = JSON.parse(json);
+    } catch {
+      await refundCredit(env, identity.sub);
+      console.log(`scan: model returned non-JSON: ${json.slice(0, 200)}`);
+      return new Response('Extraction service unavailable', { status: 502 });
+    }
+
+    const problem = extractionProblem(extracted);
+    if (problem) {
+      await refundCredit(env, identity.sub);
+      console.log(`scan: unusable extraction (${problem}): ${json.slice(0, 200)}`);
+      return new Response('Extraction service unavailable', { status: 502 });
+    }
+
+    return new Response(JSON.stringify(extracted), {
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
