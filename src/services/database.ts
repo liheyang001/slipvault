@@ -229,6 +229,8 @@ export function deleteInvoice(id: string): void {
   // Clean up photo files (fire-and-forget)
   if (invoice) {
     for (const uri of [invoice.photoUri, ...(invoice.itemPhotos ?? [])]) {
+      // idempotent:true — a photo already gone is the desired end state. The
+      // row is deleted regardless; a leftover file wastes space, nothing more.
       if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
     }
   }

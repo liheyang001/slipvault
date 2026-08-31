@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initDatabase, getSetting, setSetting, getAllInvoices } from './src/services/database';
 import { runDataMigrations } from './src/services/migrations';
+import { tryStartup, logSwallowed } from './src/utils/log';
 import { initNotifications, cancelScheduledNotification, scheduleMonthlyReminder } from './src/services/notifications';
 import { configureAuth, getStoredUser } from './src/services/auth';
 import {
@@ -25,41 +26,43 @@ import SettingsScreen from './src/screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Run before any component renders so DB tables exist when screens query them
-try { initDatabase(); } catch {}
+// Run before any component renders so DB tables exist when screens query them.
+// Each step fails open — a broken subsystem must not stop the app opening —
+// but each now says so in the log rather than vanishing.
+tryStartup('database init', initDatabase);
 // After the schema is in place: repairs to existing rows, each guarded by its
 // own completion flag.
-try { runDataMigrations(); } catch {}
-try { initNotifications(); } catch {}
-try { configureAuth(); } catch {}
-try { configurePurchases(); } catch {}
+tryStartup('data migrations', runDataMigrations);
+tryStartup('notifications init', initNotifications);
+tryStartup('auth config', configureAuth);
+tryStartup('purchases config', configurePurchases);
 // Link an already-signed-in user to RevenueCat. Without this, anyone who
 // signed in on a previous version buys under an anonymous ID and the server
 // refuses to credit it — signInWithGoogle only links at the moment of signing
 // in, which never runs again for them.
-try {
+tryStartup('purchase identity link', () => {
   const storedUser = getStoredUser();
   if (storedUser) {
     // Link first, then sync: a purchase recovered before the identity is set
     // would be filed under an anonymous id the server refuses to credit.
     linkPurchasesToUser(storedUser.id)
       .then(() => syncPendingPurchases())
-      .catch(() => {});
+      .catch((err) => logSwallowed('purchase sync', err));
   }
-} catch {}
+});
 
 // Decided once, before mount — changing Stack.Navigator's initialRouteName after
 // mount has no effect, so this must not be a hook/state value. Guarded like the
-// initDatabase()/initNotifications() calls above: if the settings table isn't
-// ready, fail open to Home rather than crashing module evaluation.
+// steps above: if the settings table isn't ready, fail open to Home rather than
+// crashing module evaluation.
 let initialRouteName: 'Home' | 'Onboarding' = 'Home';
-try {
+tryStartup('onboarding check', () => {
   initialRouteName = getSetting('hasSeenOnboarding', 'false') === 'true' ? 'Home' : 'Onboarding';
-} catch {}
+});
 
 export default function App() {
   useEffect(() => {
-    refreshMonthlyNotification().catch(() => {});
+    refreshMonthlyNotification().catch((err) => logSwallowed('monthly reminder refresh', err));
   }, []);
 
   async function refreshMonthlyNotification() {
@@ -67,7 +70,9 @@ export default function App() {
 
     const oldId = getSetting('monthlyNotifId', '');
     if (oldId) {
-      await cancelScheduledNotification(oldId).catch(() => {});
+      await cancelScheduledNotification(oldId).catch((err) =>
+        logSwallowed('cancel stale monthly reminder', err)
+      );
       setSetting('monthlyNotifId', '');
     }
 

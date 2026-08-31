@@ -81,6 +81,8 @@ export async function restoreBackup(): Promise<{ invoices: number } | null> {
 
   const receiptsDir = `${FileSystem.documentDirectory}invoices/`;
   const itemsDir = `${FileSystem.documentDirectory}item_photos/`;
+  // intermediates:true means "already exists" is not an error; nothing else
+  // can fail here that the writes below will not report anyway.
   await FileSystem.makeDirectoryAsync(receiptsDir, { intermediates: true }).catch(() => {});
   await FileSystem.makeDirectoryAsync(itemsDir, { intermediates: true }).catch(() => {});
 
