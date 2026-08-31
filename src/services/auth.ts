@@ -1,6 +1,8 @@
 import type * as GoogleSigninModule from '@react-native-google-signin/google-signin';
 import { getSetting, setSetting } from './database';
 import { linkPurchasesToUser } from './purchases';
+import { needsRefresh } from '../utils/jwt';
+import { logSwallowed } from '../utils/log';
 
 /**
  * Lazily require the SDK so importing this file never touches the native
@@ -100,59 +102,13 @@ export async function signOutGoogle(): Promise<void> {
   try {
     const { GoogleSignin } = sdk();
     await GoogleSignin.signOut();
-  } catch {}
+  } catch (err) {
+    // The local user is cleared either way, so sign-out always appears to
+    // work — but an SDK that refuses to sign out explains a later sign-in
+    // returning the same account unexpectedly.
+    logSwallowed('Google sign-out', err);
+  }
   setSetting('authUser', '');
-}
-
-const B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-/** Decodes base64url to a byte-per-char string. Hand-rolled because atob is
- * not guaranteed present across Hermes versions, and getting this wrong would
- * silently force a re-authentication on every single request. */
-function decodeBase64Url(input: string): string {
-  let out = '';
-  let buffer = 0;
-  let bits = 0;
-  for (const ch of input) {
-    if (ch === '=') break;
-    const value = B64_ALPHABET.indexOf(ch === '-' ? '+' : ch === '_' ? '/' : ch);
-    if (value < 0) continue;
-    buffer = (buffer << 6) | value;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out += String.fromCharCode((buffer >> bits) & 0xff);
-    }
-  }
-  return out;
-}
-
-/**
- * Reads a JWT's `exp` without verifying anything — the Worker does the real
- * verification. This only decides whether to bother refreshing.
- * Returns null when the token cannot be parsed, which callers treat as expired.
- */
-function expiryOf(token: string): number | null {
-  try {
-    const part = token.split('.')[1];
-    if (!part) return null;
-    // Pulled out by regex rather than JSON.parse: the payload carries the
-    // user's name, and decoding its UTF-8 bytes one char at a time would
-    // mangle any non-ASCII into something JSON.parse could choke on. exp is
-    // always a bare integer.
-    const match = /"exp"\s*:\s*(\d+)/.exec(decodeBase64Url(part));
-    return match ? Number(match[1]) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** True when the token is gone, unreadable, or expires within the minute —
- * the margin keeps a token from dying in flight. */
-function needsRefresh(token: string | null): boolean {
-  if (!token) return true;
-  const exp = expiryOf(token);
-  return exp === null || exp * 1000 <= Date.now() + 60_000;
 }
 
 /** Re-authenticates from the stored credential, with no UI. */

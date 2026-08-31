@@ -3,29 +3,21 @@
 // are user-configurable in Settings; NZ GST is the default because that is
 // where the app shipped first.
 import { getSetting, setSetting } from '../services/database';
+import {
+  DEFAULT_TAX_PERCENT,
+  DEFAULT_TAX_LABEL,
+  exclFromInclAt,
+  inclFromExclAt,
+  taxFromInclAt,
+} from './taxMath';
+
+// Arithmetic and presets live in taxMath so they can be tested without a
+// database. Re-exported here so callers keep a single import site.
+export { TAX_PRESETS, DEFAULT_TAX_PERCENT, DEFAULT_TAX_LABEL } from './taxMath';
+export type { TaxPreset } from './taxMath';
 
 export const TAX_RATE_KEY = 'tax_rate_percent';
 export const TAX_LABEL_KEY = 'tax_label';
-
-export const DEFAULT_TAX_PERCENT = 15;
-export const DEFAULT_TAX_LABEL = 'GST';
-
-export type TaxPreset = { country: string; label: string; percent: number };
-
-/** Offered in Settings. Custom entry sits alongside these, so the list only
-    has to cover the common cases, not every jurisdiction. */
-export const TAX_PRESETS: TaxPreset[] = [
-  { country: 'New Zealand', label: 'GST', percent: 15 },
-  { country: 'Australia', label: 'GST', percent: 10 },
-  { country: 'United Kingdom', label: 'VAT', percent: 20 },
-  { country: 'Ireland', label: 'VAT', percent: 23 },
-  { country: 'Germany', label: 'VAT', percent: 19 },
-  { country: 'France', label: 'VAT', percent: 20 },
-  { country: 'Singapore', label: 'GST', percent: 9 },
-  { country: 'Canada', label: 'GST', percent: 5 },
-  { country: 'India', label: 'GST', percent: 18 },
-  { country: 'No tax', label: 'Tax', percent: 0 },
-];
 
 // These are read on every keystroke while amounts are being edited, so keep
 // them in memory rather than hitting SQLite each time.
@@ -67,18 +59,14 @@ export function refreshTaxSettings(): void {
   cachedLabel = null;
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
 export function exclFromIncl(incl: number): number {
-  return round2(incl / (1 + getTaxPercent() / 100));
+  return exclFromInclAt(incl, getTaxPercent());
 }
 
 export function inclFromExcl(excl: number): number {
-  return round2(excl * (1 + getTaxPercent() / 100));
+  return inclFromExclAt(excl, getTaxPercent());
 }
 
-/** The tax portion of a tax-inclusive amount. Derived from exclFromIncl so the
-    three stored figures always add up after rounding. */
 export function taxFromIncl(incl: number): number {
-  return round2(incl - exclFromIncl(incl));
+  return taxFromInclAt(incl, getTaxPercent());
 }
